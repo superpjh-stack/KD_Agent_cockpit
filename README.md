@@ -33,6 +33,18 @@ cp .env.example .env
 streamlit run app.py
 ```
 
+### Docker Compose 배포
+
+`docker-compose.yml`은 Streamlit 앱과 PostgreSQL + pgvector를 함께 실행합니다. `POSTGRES_PASSWORD`와 `OPENAI_API_KEY`는 서버 환경변수 또는 Compose 입력값으로만 설정하고 저장소에 커밋하지 않습니다.
+
+```bash
+export POSTGRES_PASSWORD='강한-비밀번호'
+export OPENAI_API_KEY='발급받은-키'
+docker compose up -d --build
+```
+
+앱은 `http://서버주소:8501`에서 접근합니다. PostgreSQL 볼륨은 `kgt_postgres_data`에 유지됩니다.
+
 기본 실행은 로컬 PostgreSQL + pgvector를 사용합니다. `DATABASE_URL`을 비워두면 테스트·오프라인용 SQLite로 자동 전환됩니다. RAG Agent와 문서 인덱싱에는 `.env`의 `OPENAI_API_KEY`가 필요합니다.
 
 ### 로컬 PostgreSQL + pgvector
