@@ -1,0 +1,4 @@
+interface:
+  display_name: "Agent Maker"
+  short_description: "제조 AI Agent를 대화형 업무 화면으로 설계·구현"
+  default_prompt: "Use $manufacturing-agent-maker to build a chat-centered manufacturing AI Agent cockpit for this company."

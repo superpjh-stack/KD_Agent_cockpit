@@ -1,0 +1,79 @@
+[
+  {
+    "rule_id": "DEMO-R001",
+    "name": "자재 부족",
+    "source_table": "materials",
+    "condition": "stock_status = 부족",
+    "owner": "구매",
+    "action": "사용 가능 재고와 작업 필요량 확인, 입고일 재확인",
+    "source_document": "KGT-KB-005",
+    "revision": "DEMO-1",
+    "status": "검증용·자동 실행 안 함"
+  },
+  {
+    "rule_id": "DEMO-R002",
+    "name": "입고 지연 예상",
+    "source_table": "purchase_orders",
+    "condition": "expected_date > promised_date",
+    "owner": "구매",
+    "action": "공급사 납기 재확인 및 영향 작업 검토",
+    "source_document": "KGT-KB-005",
+    "revision": "DEMO-1",
+    "status": "검증용·자동 실행 안 함"
+  },
+  {
+    "rule_id": "DEMO-R003",
+    "name": "설계 변경 승인 대기",
+    "source_table": "designs",
+    "condition": "change_status에 승인대기 포함",
+    "owner": "설계",
+    "action": "변경 영향과 고객 승인 확인; 재작업 확정 아님",
+    "source_document": "KGT-KB-003",
+    "revision": "DEMO-1",
+    "status": "검증용·자동 실행 안 함"
+  },
+  {
+    "rule_id": "DEMO-R004",
+    "name": "공정 지연",
+    "source_table": "operations",
+    "condition": "status에 지연 포함 또는 미완료이고 due_date가 평가일 이전",
+    "owner": "생산",
+    "action": "지연 원인과 회복계획 확인",
+    "source_document": "KGT-KB-010",
+    "revision": "DEMO-1",
+    "status": "검증용·자동 실행 안 함"
+  },
+  {
+    "rule_id": "DEMO-R005",
+    "name": "계획 공수 초과",
+    "source_table": "operations",
+    "condition": "actual_hours > plan_hours",
+    "owner": "생산·견적",
+    "action": "추가 공수 원인 확인; 실제 비용 초과 판정과 구분",
+    "source_document": "KGT-KB-002",
+    "revision": "DEMO-1",
+    "status": "검증용·자동 실행 안 함"
+  },
+  {
+    "rule_id": "DEMO-R006",
+    "name": "FAT 불합격",
+    "source_table": "fat_tests",
+    "condition": "result = 불합격",
+    "owner": "품질",
+    "action": "조치·재시험 결과 확인; 자동 합격 처리 금지",
+    "source_document": "KGT-KB-009",
+    "revision": "DEMO-1",
+    "status": "검증용·자동 실행 안 함"
+  },
+  {
+    "rule_id": "DEMO-R007",
+    "name": "입고검사 보류",
+    "source_table": "incoming_inspections",
+    "condition": "result != 합격 또는 document_attached = 0",
+    "owner": "품질·구매",
+    "action": "보류 원인과 필수 문서 확인, 승인 전 사용 보류",
+    "source_document": "KGT-KB-004",
+    "revision": "DEMO-1",
+    "status": "검증용·자동 실행 안 함"
+  }
+]
