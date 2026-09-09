@@ -19,6 +19,7 @@ from kyungdong_agent import (
 
 load_dotenv()
 BASE_DIR = Path(__file__).parent
+SERVER_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
 
 st.set_page_config(page_title="경동글로벌텍 Agent Cockpit", page_icon="⚙️", layout="wide", initial_sidebar_state="collapsed")
 st.markdown(f"<style>{(BASE_DIR / 'assets' / 'cockpit.css').read_text()}</style>", unsafe_allow_html=True)
@@ -30,6 +31,8 @@ for key, default in {
     "messages": [WELCOME_MESSAGE.copy()], "vector_store_id": repository.setting("vector_store_id"), "uploaded_names": [],
     "previous_response_id": None, "pending_question": None, "question_group": "지식베이스",
     "voice_draft": "", "voice_digest": None,
+    "agent_settings": {"api_key": SERVER_API_KEY,
+                       "model": os.getenv("OPENAI_MODEL", DEFAULT_MODEL), "max_results": 6},
 }.items():
     if key not in st.session_state:
         st.session_state[key] = default
@@ -40,9 +43,41 @@ if st.session_state.question_group not in QUESTION_GROUPS:
 
 with st.sidebar:
     st.header("Agent 설정")
-    api_key = st.text_input("OpenAI API Key", value=os.getenv("OPENAI_API_KEY", ""), type="password")
-    model = st.text_input("모델", value=os.getenv("OPENAI_MODEL", DEFAULT_MODEL))
-    max_results = st.slider("문서 검색 결과", 1, 20, 6)
+    settings = st.session_state.agent_settings
+    key_status = st.empty()
+    with st.expander("API 키·모델 변경", expanded=not bool(settings["api_key"])):
+        st.caption("변경할 때만 입력하세요. 빈 키 입력란은 현재 적용된 키를 유지합니다.")
+        with st.form("agent_settings_form", clear_on_submit=True):
+            draft_api_key = st.text_input("새 OpenAI API Key", type="password")
+            draft_model = st.text_input("모델", value=settings["model"])
+            draft_max_results = st.slider("문서 검색 결과", 1, 20, settings["max_results"])
+            apply_settings = st.form_submit_button("설정 반영", type="primary", use_container_width=True)
+        st.caption("여기서 입력한 키는 현재 세션에 적용됩니다. 서버 기본 키는 Hostinger의 OPENAI_API_KEY 환경변수에서 변경합니다.")
+        if SERVER_API_KEY and settings["api_key"] != SERVER_API_KEY:
+            if st.button("서버 기본 키 사용", use_container_width=True):
+                st.session_state.agent_settings = {**settings, "api_key": SERVER_API_KEY}
+                st.session_state.previous_response_id = None
+                st.rerun()
+    if apply_settings:
+        if not draft_model.strip():
+            st.error("모델 이름을 입력해 주세요. 기존 설정은 유지됩니다.")
+        else:
+            next_api_key = draft_api_key.strip() or settings["api_key"]
+            if next_api_key != settings["api_key"]:
+                st.session_state.previous_response_id = None
+            settings = {"api_key": next_api_key, "model": draft_model.strip(),
+                        "max_results": draft_max_results}
+            st.session_state.agent_settings = settings
+            st.success("설정을 반영했습니다.")
+    api_key, model, max_results = settings["api_key"], settings["model"], settings["max_results"]
+    if api_key:
+        masked_key = "••••••••" + (api_key[-4:] if len(api_key) > 8 else "")
+        source = "서버 기본 키 · 자동 적용" if api_key == SERVER_API_KEY else "변경한 키 · 현재 세션"
+        key_status.success(f"{source}\n\n현재 키: {masked_key}")
+    else:
+        key_status.info("서버 기본 키가 없습니다. 아래에서 API 키를 입력해 주세요.")
+    if SERVER_API_KEY:
+        st.caption("새로 접속해도 서버 기본 키가 자동 적용됩니다.")
     st.divider()
     st.subheader("지식문서")
     uploads = st.file_uploader("견적·설계·자재·FAT 문서", accept_multiple_files=True, type=["pdf", "docx", "txt", "md", "csv"])

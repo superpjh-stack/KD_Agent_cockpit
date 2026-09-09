@@ -33,6 +33,12 @@ cp .env.example .env
 streamlit run app.py
 ```
 
+### API 키 자동 적용
+
+프로젝트 `.env` 또는 배포 서버 환경변수에 `OPENAI_API_KEY`를 설정하면 새 세션에서도 자동 적용됩니다. 사이드바에는 현재 키의 끝 4자리와 적용 출처만 표시하며, 기본 키 전체를 입력란으로 전달하지 않습니다.
+
+`API 키·모델 변경`을 열면 필요한 경우에만 다른 키를 입력할 수 있습니다. 빈 입력란은 현재 키를 유지하며, 여기서 바꾼 키는 현재 세션에만 적용됩니다. 서버 기본 키를 영구 변경하려면 Hostinger Docker Manager의 환경변수 또는 Compose 파일과 같은 디렉터리의 `.env`를 수정한 뒤 앱 컨테이너를 다시 생성합니다. `.env`는 저장소나 Docker 이미지에 포함하지 않습니다.
+
 ### Docker Compose 배포
 
 `docker-compose.yml`은 Streamlit 앱과 PostgreSQL + pgvector를 함께 실행합니다. `POSTGRES_PASSWORD`와 `OPENAI_API_KEY`는 서버 환경변수 또는 Compose 입력값으로만 설정하고 저장소에 커밋하지 않습니다.
