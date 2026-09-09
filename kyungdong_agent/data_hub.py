@@ -415,18 +415,24 @@ class PostgresRepository(KyungdongRepository):
         self.db_path = None
         self._initialize()
 
-    def _connect(self) -> _PostgresConnection:
+    def _connect(self, *, register_vector_type: bool = True) -> _PostgresConnection:
         try:
             import psycopg
             from pgvector.psycopg import register_vector
         except ImportError as exc:
             raise RuntimeError("PostgreSQL 사용에는 psycopg[binary] 설치가 필요합니다.") from exc
         raw = psycopg.connect(self.database_url)
-        register_vector(raw)
+        try:
+            if register_vector_type:
+                register_vector(raw)
+        except Exception:
+            raw.close()
+            raise
         return _PostgresConnection(raw)
 
     def _initialize(self) -> None:
-        with self._connect() as connection:
+        # A fresh database has no vector type until this transaction commits.
+        with self._connect(register_vector_type=False) as connection:
             connection.execute("CREATE EXTENSION IF NOT EXISTS vector")
         super()._initialize()
         with self._connect() as connection:
