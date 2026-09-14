@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import hashlib
 import tempfile
 from pathlib import Path
 
@@ -9,6 +8,7 @@ import streamlit as st
 from dotenv import load_dotenv
 from kyungdong_agent.voice import VoiceService
 from kyungdong_agent.workbench import render_workbench
+from kyungdong_agent.voice_panel import render_voice_panel
 from openai import OpenAI
 
 from kyungdong_agent import (
@@ -115,14 +115,6 @@ agent = ManufacturingAgent(OpenAI(api_key=api_key, timeout=REQUEST_TIMEOUT_SECON
 voice_service = VoiceService(agent.client) if agent else None
 
 
-def submit_voice_question():
-    text = st.session_state.voice_draft.strip()
-    if text:
-        st.session_state.pending_question = text
-        st.session_state.voice_draft = ""
-        st.session_state.voice_digest = None
-
-
 kpi = repository.dashboard()
 
 st.markdown("""
@@ -169,7 +161,7 @@ with left_col:
             st.session_state.messages = [WELCOME_MESSAGE.copy()]
             st.session_state.previous_response_id = None
             st.session_state.voice_draft = ""
-            st.session_state.voice_digest = None
+            st.session_state.voice_error = ""
             st.rerun()
         history = user_question_history(st.session_state.messages)
         if not history:
@@ -279,6 +271,9 @@ with context_col:
         st.caption("DB는 검증용 가상 데이터입니다. 이 패널에서는 조회만 가능합니다.")
 
 with chat_col:
+    render_voice_panel(voice_service)
+    with st.expander("글로 질문하기"):
+        typed_question = st.chat_input("프로젝트·자재·납기를 글로 질문하세요", disabled=agent is None)
     st.markdown('<div id="agent-chat" class="mobile-anchor"></div>', unsafe_allow_html=True)
     with st.container(border=True, height=580, key="chat_panel"):
         st.markdown('''<div class="chat-shell-header">
@@ -295,7 +290,9 @@ with chat_col:
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
                 if message["role"] == "assistant" and message.get("created_at") != "시작":
-                    if st.button("음성으로 듣기", key=f"speak_{message_index}", disabled=voice_service is None):
+                    if message.get("voice_error") and not message.get("audio"):
+                        st.caption(message["voice_error"])
+                    if not message.get("audio") and st.button("음성으로 듣기", key=f"speak_{message_index}", disabled=voice_service is None):
                         try:
                             if not message.get("audio"):
                                 with st.spinner("답변을 음성으로 만들고 있습니다…"):
@@ -331,30 +328,6 @@ with chat_col:
                                 score_text = f" · 유사도 {score:.3f}" if isinstance(score, (int, float)) else ""
                                 st.markdown(f"**{evidence['filename']}**{score_text}")
                                 st.write(evidence.get("text") or "검색 텍스트 미제공")
-    with st.container(border=True, key="voice_panel"):
-        st.markdown("##### 음성으로 질문하기")
-        st.caption("녹음 → 글자로 변환 → 확인 후 질문 보내기")
-        recording = st.audio_input("마이크로 질문 녹음", key="voice_recording", disabled=voice_service is None)
-        digest = hashlib.sha256(recording.getvalue()).hexdigest() if recording else None
-        if digest != st.session_state.voice_digest:
-            st.session_state.voice_digest = digest
-            st.session_state.voice_draft = ""
-        if st.button("녹음한 질문을 글자로 변환", key="transcribe_voice", disabled=not recording or voice_service is None):
-            try:
-                with st.spinner("질문을 듣고 있습니다…"):
-                    st.session_state.voice_draft = voice_service.transcribe(recording.getvalue())
-            except ValueError as exc:
-                st.error(str(exc))
-            except Exception:
-                st.error("음성 인식에 실패했습니다. API 연결·사용 한도를 확인한 뒤 다시 시도하거나 글로 질문하세요.")
-        if st.session_state.voice_draft:
-            st.text_area("인식한 질문 (수정 가능)", key="voice_draft", height=90)
-            st.button("이 질문 보내기", key="send_voice", type="primary", on_click=submit_voice_question,
-                      disabled=not st.session_state.voice_draft.strip() or voice_service is None)
-        st.caption("변환할 때 녹음이 OpenAI로 전송됩니다. 마이크 사용을 허용해 주세요. 녹음은 DB에 저장하지 않습니다.")
-        if not voice_service:
-            st.caption("왼쪽 상단 설정에서 API 키를 입력하면 음성 기능을 사용할 수 있습니다.")
-    typed_question = st.chat_input("프로젝트·견적·자재·납기·FAT에 질문하세요", disabled=agent is None)
 
 question = st.session_state.pop("pending_question", None) or typed_question
 if question:
@@ -373,6 +346,12 @@ if question:
                 "knowledge_base_connected": answer.knowledge_base_connected,
             })
             st.session_state.previous_response_id = answer.response_id
+            if st.session_state.get("voice_answers") and voice_service:
+                try:
+                    with st.spinner("답변을 들을 수 있도록 음성을 준비하고 있습니다…"):
+                        st.session_state.messages[-1]["audio"] = voice_service.speak(answer.text)
+                except Exception:
+                    st.session_state.messages[-1]["voice_error"] = "음성 준비에 실패했습니다. 답변은 글로 확인하거나 ‘음성으로 듣기’를 눌러 다시 시도하세요."
         except Exception as exc:
             st.session_state.messages.append({"role": "assistant", "content": f"답변 생성에 실패했습니다: {exc}", "created_at": timestamp()})
         st.rerun()
