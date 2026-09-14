@@ -8,6 +8,7 @@ from pathlib import Path
 import streamlit as st
 from dotenv import load_dotenv
 from kyungdong_agent.voice import VoiceService
+from kyungdong_agent.workbench import render_workbench
 from openai import OpenAI
 
 from kyungdong_agent import (
@@ -147,6 +148,9 @@ with st.container(key="kpis"):
     metrics[3].metric("FAT 불합격", f"{kpi['fat_failures']}건")
     metrics[4].metric("평균 납기 기준", f"{kpi['confirmed_avg_lead_days']}일")
 
+with st.expander("업무 시작 · 프로젝트별 확인할 일과 담당자", expanded=False):
+    render_workbench(repository)
+
 with st.container(key="mobile_navigation"):
     st.markdown('''<nav class="mobile-nav" aria-label="모바일 업무 메뉴">
     <a href="#agent-chat" target="_self">대화</a>
@@ -178,8 +182,8 @@ with left_col:
 
     with st.container(border=True, key="suggestions_panel"):
         st.markdown("#### 추천 질문")
-        st.caption("지식베이스 10개 · DB 10개 · 룰 10개")
-        group = st.segmented_control("조회 영역", list(QUESTION_GROUPS), default=st.session_state.question_group, label_visibility="collapsed")
+        st.caption("절차 찾기 · 현황 조회 · 판단 기준 확인")
+        group = st.selectbox("조회 영역", list(QUESTION_GROUPS), format_func=lambda value: {"지식베이스": "업무 절차", "DB": "현재 현황", "룰": "판단 기준"}[value], index=list(QUESTION_GROUPS).index(st.session_state.question_group), label_visibility="collapsed")
         if group:
             st.session_state.question_group = group
         st.caption(f"{st.session_state.question_group} 조회 질문 10개")
@@ -217,7 +221,7 @@ with context_col:
                     format_func=lambda doc_id: by_id[doc_id]["filename"], key="selected_document")
                 doc = by_id[selected_doc]
                 st.caption(f"{doc['source']} / {doc['status']}")
-                with st.expander("문서 본문 보기", expanded=True):
+                with st.expander("문서 본문 보기", expanded=False):
                     if doc["content"]:
                         with st.container(height=240):
                             st.text(doc["content"])
@@ -281,7 +285,7 @@ with chat_col:
           <div><div class="chat-shell-kicker">MANUFACTURING ASSISTANT</div><strong>현장 AI 상담</strong>
           <span>프로젝트·자재·공정·품질을 한 곳에서 확인합니다.</span></div>
           <div class="chat-shell-status"><i></i> 연결됨</div>
-        </div>''', unsafe_allow_html=True)
+        </div>'''.replace('연결됨', 'AI 사용 가능' if agent else 'AI 설정 필요'), unsafe_allow_html=True)
         if not user_question_history(st.session_state.messages):
             st.markdown('''<div class="chat-intro"><h2>도면부터 납기까지,<br>현장의 판단을 빠르게.</h2>
             <p>자재 보류, 설계 변경, 품질 이슈를 질문하세요.<br>프로젝트 데이터와 문서를 연결해 확인합니다.</p></div>''', unsafe_allow_html=True)
@@ -303,6 +307,8 @@ with chat_col:
                         st.audio(message["audio"], format="audio/mpeg")
                 if message.get("data_tools") or message.get("evidence") or message.get("sources") or "searched_documents" in message:
                     with st.expander("근거 자세히 보기"):
+                        for item in message.get("data_evidence", []):
+                            st.json(item, expanded=False)
                         grounds = []
                         if message.get("data_tools"):
                             grounds.append("Data Hub: " + ", ".join(message["data_tools"]))
@@ -357,10 +363,12 @@ if question:
     else:
         st.session_state.messages.append({"role": "user", "content": question, "created_at": timestamp()})
         try:
-            answer = agent.ask(question, st.session_state.vector_store_id, st.session_state.previous_response_id, max_results)
+            with st.spinner("업무 데이터와 근거를 확인하고 있습니다…"):
+                answer = agent.ask(question, st.session_state.vector_store_id, st.session_state.previous_response_id, max_results)
             st.session_state.messages.append({
                 "role": "assistant", "content": answer.text, "sources": answer.sources,
                 "evidence": answer.evidence, "data_tools": answer.data_tools, "created_at": timestamp(),
+                "data_evidence": answer.data_evidence,
                 "searched_documents": answer.searched_documents,
                 "knowledge_base_connected": answer.knowledge_base_connected,
             })

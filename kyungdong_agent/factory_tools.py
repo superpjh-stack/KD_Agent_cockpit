@@ -18,6 +18,7 @@ class KyungdongToolRegistry:
         self._handlers: dict[str, Callable[..., Any]] = {
             "search_knowledge": repository.search_knowledge,
             "get_rules": repository.get_rules,
+            "evaluate_rules": repository.evaluate_rules,
             "get_db_records": repository.table_records,
             "get_project_summary": repository.project_summary,
             "get_material_status": repository.material_status,
@@ -29,6 +30,9 @@ class KyungdongToolRegistry:
             "get_claim_trace": repository.claim_trace,
         }
         self.definitions = [
+            self._tool("evaluate_rules", "프로젝트의 확인할 일·위험·담당자·다음 조치를 저장 룰과 업무 원본으로 평가한다. 미평가 항목도 반환한다. 샘플 판정이며 승인이 아니다.",
+                       {"project_id": _nullable_string("프로젝트 ID. 전체이면 null"),
+                        "as_of": _nullable_string("평가 기준일 YYYY-MM-DD. 오늘이면 null")}, ["project_id", "as_of"]),
             self._tool("get_db_records", "업무 DB 테이블의 실제 저장 레코드를 조회한다. 설비 측정과 전체 클레임 목록 등 원본 데이터 조회에 사용한다.",
                        {"table": {"type": "string", "enum": list(repository.TABLE_LABELS),
                                   "description": "조회할 업무 테이블 이름"}}, ["table"]),

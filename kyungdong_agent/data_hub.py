@@ -120,7 +120,27 @@ class KyungdongRepository:
         return sorted(matches, key=lambda item: (-item["match_count"], item["filename"]))[:5]
 
     def get_rules(self) -> list[dict[str, Any]]:
-        return self.table_records("rules")
+        return self._query("SELECT * FROM rules ORDER BY rule_id")
+
+    def rule_records(self, table: str, project_id: str | None = None) -> list[dict[str, Any]]:
+        from .rules import RECORD_KEYS
+        if table not in RECORD_KEYS:
+            raise ValueError("룰 평가에 허용되지 않은 테이블입니다.")
+        if table == "incoming_inspections":
+            sql = "SELECT i.*, m.project_id FROM incoming_inspections i LEFT JOIN materials m ON i.material_lot=m.material_lot"
+            if project_id:
+                sql += " WHERE m.project_id=?"
+            sql += " ORDER BY i.inspection_id"
+        else:
+            sql = f"SELECT * FROM {table}"
+            if project_id:
+                sql += " WHERE project_id=?"
+            sql += f" ORDER BY {RECORD_KEYS[table]}"
+        return self._query(sql, (project_id,) if project_id else ())
+
+    def evaluate_rules(self, project_id: str | None = None, as_of: str | None = None) -> dict[str, Any]:
+        from .rules import evaluate_rules
+        return evaluate_rules(self, project_id, as_of)
 
     def setting(self, key: str) -> str | None:
         rows = self._query("SELECT value FROM app_settings WHERE key=?", (key,))

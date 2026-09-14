@@ -29,6 +29,8 @@ def test_responses_function_call_loop():
     answer = ManufacturingAgent(client, factory_tools=FakeRegistry()).ask("요약해줘")
     assert answer.text == "프로젝트 요약"
     assert answer.data_tools == ["get_project_summary"]
+    assert answer.data_evidence[0]["payload"] == {"status": "ok"}
+    assert answer.data_evidence[0]["arguments"] == '{"project_id":"KGT-26001"}'
     assert responses.calls[1]["input"][0]["type"] == "function_call_output"
 
 

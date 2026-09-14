@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +26,7 @@ class AgentAnswer:
     searched_documents: bool = False
     tool_rounds: int = 0
     knowledge_base_connected: bool = False
+    data_evidence: list[dict[str, Any]] = field(default_factory=list)
 
 
 class ManufacturingAgent:
@@ -73,6 +74,7 @@ class ManufacturingAgent:
         sources: list[str] = []
         evidence: list[dict[str, Any]] = []
         used_tools: list[str] = []
+        data_evidence: list[dict[str, Any]] = []
         searched = False
         rounds = 0
 
@@ -95,6 +97,8 @@ class ManufacturingAgent:
                     result = self.factory_tools.execute(call.name, call.arguments)
                 else:
                     result = json.dumps({"error": "Data Hub가 연결되지 않았습니다.", "tool": call.name}, ensure_ascii=False)
+                if call.name != "search_knowledge":
+                    data_evidence.append({"tool": call.name, "arguments": call.arguments, "payload": json.loads(result)})
                 if call.name == "search_knowledge":
                     payload = json.loads(result)
                     if payload.get("status") == "ok":
@@ -127,6 +131,7 @@ class ManufacturingAgent:
             evidence=evidence,
             response_id=getattr(response, "id", None),
             data_tools=used_tools,
+            data_evidence=data_evidence,
             searched_documents=searched,
             tool_rounds=rounds,
             knowledge_base_connected=bool(vector_store_id) or any(t.get("name") == "search_knowledge" for t in tools),
