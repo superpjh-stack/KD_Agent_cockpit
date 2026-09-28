@@ -1,7 +1,7 @@
 services:
   kyungdong-agent-v2:
     build:
-      context: .
+      context: https://github.com/superpjh-stack/KD_Agent_cockpit.git#main
       dockerfile: v2/Dockerfile
     image: kyungdong-agent-v2:local
     container_name: kyungdong-agent-v2

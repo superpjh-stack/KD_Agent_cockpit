@@ -65,4 +65,4 @@ node v2/tests/browser-lifecycle.cjs
 
 `docker-compose.v2.yml`과 `v2/Dockerfile`은 기존 `경동 조종석`(8501)을 재시작하지 않고 포트 8511에 V2를 별도 배포하도록 구성했습니다. SQLite 데모 DB는 named volume에 유지되고 샘플 데이터로 초기화됩니다. PostgreSQL 접속과 운영 데이터는 구성하지 않습니다.
 
-새 애플리케이션 이름은 `kyungdong-agent-v2`로 사용합니다. Hostinger의 Docker Manager는 Compose YAML의 `build.context: .`에 대응하는 소스 트리가 필요하므로 V2 변경을 저장소에 푸시한 후 해당 Compose 파일과 저장소 빌드 컨텍스트를 연결해야 합니다. 배포 환경에 `COCKPIT_ACCESS_TOKEN` 값을 지정하지 않으면 Compose 변수 검증 단계에서 시작을 거부합니다. 이 값은 외부 API 요청을 보호하며 앱 화면의 접근 코드 입력란에 같은 값을 입력합니다. OpenAI 기능은 `OPENAI_API_KEY` 서버 환경변수가 설정된 경우에만 활성화됩니다.
+새 애플리케이션 이름은 `kyungdong-agent-v2`로 사용합니다. Compose는 GitHub 공개 저장소의 `main`을 Docker 원격 빌드 컨텍스트로 가져옵니다. YAML 편집기의 URL 구성은 `https://raw.githubusercontent.com/superpjh-stack/KD_Agent_cockpit/main/docker-compose.v2.yml`을 사용합니다. 배포 환경에 `COCKPIT_ACCESS_TOKEN` 값을 지정하지 않으면 Compose 변수 검증 단계에서 시작을 거부합니다. 이 값은 외부 API 요청을 보호하며 앱 화면의 접근 코드 입력란에 같은 값을 입력합니다. OpenAI 기능은 `OPENAI_API_KEY` 서버 환경변수가 설정된 경우에만 활성화됩니다.
