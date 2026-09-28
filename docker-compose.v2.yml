@@ -1,0 +1,29 @@
+services:
+  kyungdong-agent-v2:
+    build:
+      context: .
+      dockerfile: v2/Dockerfile
+    image: kyungdong-agent-v2:local
+    container_name: kyungdong-agent-v2
+    restart: unless-stopped
+    environment:
+      COCKPIT_ACCESS_TOKEN: ${COCKPIT_ACCESS_TOKEN:?Set COCKPIT_ACCESS_TOKEN in Hostinger Environment}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4.1}
+      OPENAI_REALTIME_MODEL: ${OPENAI_REALTIME_MODEL:-gpt-realtime-2.1}
+      OPENAI_REALTIME_VOICE: ${OPENAI_REALTIME_VOICE:-marin}
+      KGT_SQLITE_PATH: /app/data/kyungdong_demo_v2.db
+      DATABASE_URL: ''
+    ports:
+      - "8511:8511"
+    volumes:
+      - kyungdong_agent_v2_data:/app/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8511/api/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  kyungdong_agent_v2_data:

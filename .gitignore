@@ -6,3 +6,7 @@ __pycache__/
 .pytest_cache/
 data/postgres/
 data/postgres.log
+
+node_modules/
+v2/web/dist/
+*.tsbuildinfo
