@@ -6,6 +6,7 @@ type Turn={role:'user'|'assistant';text:string};
 export function useRealtimeVoice(token:string,project:string,onTurn:(turn:Turn)=>void,onEvidence:(name:string,output:string)=>void){
  const [state,setState]=useState<RealtimeVoiceState>('idle'),[error,setError]=useState(''),[muted,setMuted]=useState(false),[needsPlay,setNeedsPlay]=useState(false);
  const pc=useRef<RTCPeerConnection|null>(null),channel=useRef<RTCDataChannel|null>(null),media=useRef<MediaStream|null>(null),audio=useRef<HTMLAudioElement|null>(null),epoch=useRef(0);
+ const requests=useRef(new Set<AbortController>());
  const toolCalls=useRef(new Set<string>());
  const toolOutputs=useRef(new Map<string,{name:string;output:string}>());
  const toolsInResponse=useRef(0);
@@ -15,6 +16,7 @@ export function useRealtimeVoice(token:string,project:string,onTurn:(turn:Turn)=
 
  const stop=useCallback(()=>{
   epoch.current++;
+  requests.current.forEach(request=>request.abort());requests.current.clear();
   channel.current?.close();channel.current=null;
   pc.current?.close();pc.current=null;
   media.current?.getTracks().forEach(t=>t.stop());media.current=null;
@@ -31,22 +33,24 @@ export function useRealtimeVoice(token:string,project:string,onTurn:(turn:Turn)=
   let args:Record<string,unknown>={};
   try{args=JSON.parse(argumentsText||'{}') as Record<string,unknown>}catch{args={}}
   let output:string;
+  const request=new AbortController();requests.current.add(request);
   try{
-   const response=await fetch('/api/realtime/tool',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify({name,arguments:args})});
+   const response=await fetch('/api/realtime/tool',{signal:request.signal,method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify({name,arguments:args})});
    const payload=await response.json().catch(()=>({}));
    if(!response.ok)throw new Error(String(payload.detail||'제조 데이터 조회에 실패했습니다.'));
    output=String(payload.output||JSON.stringify({error:'빈 도구 응답'}));
-  }catch(e){output=JSON.stringify({error:(e as Error).message})}
+  }catch(e){output=JSON.stringify({error:(e as Error).message})}finally{requests.current.delete(request)}
   if(run!==epoch.current)return;
   toolOutputs.current.set(callId,{name,output});
  }
  async function finishResponse(run:number){
+  if(run!==epoch.current)return;
   finishAssistant();
   if(toolsInResponse.current){
    setState('responding');
    while(run===epoch.current&&toolsInResponse.current){
     const pending=[...toolCalls.current].filter(id=>toolOutputs.current.has(id));
-    if(!pending.length){await new Promise(resolve=>setTimeout(resolve,0));continue}
+    if(!pending.length){await new Promise(resolve=>setTimeout(resolve,20));continue}
     const dc=channel.current;
     if(!dc||dc.readyState!=='open')return;
     for(const id of pending){
@@ -87,14 +91,15 @@ export function useRealtimeVoice(token:string,project:string,onTurn:(turn:Turn)=
    if(run!==epoch.current){stream.getTracks().forEach(t=>t.stop());return}media.current=stream;
    const peer=new RTCPeerConnection();pc.current=peer;
    const player=document.createElement('audio');player.autoplay=true;player.setAttribute('playsinline','');audio.current=player;
-   peer.ontrack=e=>{player.srcObject=e.streams[0];void play()};
+   peer.ontrack=e=>{if(run!==epoch.current)return;player.srcObject=e.streams[0];void play()};
    peer.onconnectionstatechange=()=>{if(run!==epoch.current)return;if(['failed','disconnected'].includes(peer.connectionState)){stop();setError('실시간 음성 연결이 끊겼습니다. 다시 시작해 주세요.');setState('error')}else if(peer.connectionState==='connected')setState('listening')};
    stream.getTracks().forEach(t=>peer.addTrack(t,stream));
    const dc=peer.createDataChannel('oai-events');channel.current=dc;dc.onmessage=e=>handleEvent(String(e.data),run);dc.onopen=()=>{if(run===epoch.current)setState('listening')};
-   setState('connecting');const offer=await peer.createOffer();await peer.setLocalDescription(offer);
+   setState('connecting');const offer=await peer.createOffer();if(run!==epoch.current)return;await peer.setLocalDescription(offer);if(run!==epoch.current)return;
    const params=new URLSearchParams();if(project)params.set('project_id',project);
-   const response=await fetch('/api/realtime/session'+(params.size?'?'+params:''),{method:'POST',headers:{'Content-Type':'application/sdp',Authorization:'Bearer '+token},body:offer.sdp});
-   const answer=await response.text();if(!response.ok){let message='실시간 음성 세션을 시작하지 못했습니다.';try{message=JSON.parse(answer).detail||message}catch{}throw new Error(message)}
+   const request=new AbortController();requests.current.add(request);
+   const response=await fetch('/api/realtime/session'+(params.size?'?'+params:''),{signal:request.signal,method:'POST',headers:{'Content-Type':'application/sdp',Authorization:'Bearer '+token},body:offer.sdp});
+   const answer=await response.text();requests.current.delete(request);if(!response.ok){let message='실시간 음성 세션을 시작하지 못했습니다.';try{message=JSON.parse(answer).detail||message}catch{}throw new Error(message)}
    if(run!==epoch.current)return;await peer.setRemoteDescription({type:'answer',sdp:answer});
   }catch(e){if(run===epoch.current){const message=(e as Error).name==='NotAllowedError'?'마이크 권한을 허용해 주세요.':(e as Error).message;stop();setError(message);setState('error')}}
  }

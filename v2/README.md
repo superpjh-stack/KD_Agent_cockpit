@@ -1,6 +1,6 @@
 # 경동글로벌텍 AI Agent V2
 
-`new-agent-maker`의 2026-09-28 기준을 적용한 React 19 · TypeScript · Vite 7 · FastAPI 화면입니다. 기존 Streamlit 앱과 경동글로벌텍의 읽기 전용 저장소·조회 도구를 재사용합니다. 니즈푸드의 급식/김치 데이터 모델은 사용하지 않습니다.
+`new-agent-maker`의 니즈푸드 기준과 2026-10-11 설치 스킬 지침을 반영한 React 19 · TypeScript · Vite 7 · FastAPI 화면입니다. 기존 Streamlit 앱과 경동글로벌텍의 읽기 전용 저장소·조회 도구를 재사용합니다. 니즈푸드의 급식/김치 데이터 모델은 사용하지 않습니다.
 
 ## 실행
 
@@ -66,3 +66,34 @@ node v2/tests/browser-lifecycle.cjs
 `docker-compose.v2.yml`과 `v2/Dockerfile`은 기존 `경동 조종석`(8501)을 재시작하지 않고 포트 8511에 V2를 별도 배포하도록 구성했습니다. SQLite 데모 DB는 named volume에 유지되고 샘플 데이터로 초기화됩니다. PostgreSQL 접속과 운영 데이터는 구성하지 않습니다.
 
 새 애플리케이션 이름은 `kyungdong-agent-v2`로 사용합니다. Compose는 GitHub 공개 저장소의 `main`을 Docker 원격 빌드 컨텍스트로 가져옵니다. YAML 편집기의 URL 구성은 `https://raw.githubusercontent.com/superpjh-stack/KD_Agent_cockpit/main/docker-compose.v2.yml`을 사용합니다. 배포 환경에 `COCKPIT_ACCESS_TOKEN` 값을 지정하지 않으면 Compose 변수 검증 단계에서 시작을 거부합니다. 이 값은 외부 API 요청을 보호하며 앱 화면의 접근 코드 입력란에 같은 값을 입력합니다. OpenAI 기능은 `OPENAI_API_KEY` 서버 환경변수가 설정된 경우에만 활성화됩니다.
+
+
+## 2026-10-11 개선
+
+- 지식문서 검색 건수와 로딩 상태, 데이터허브·추천질문 검색을 추가했습니다.
+- 문서·테이블·음성 조회 근거에 출처, 승인상태, 조회시각을 표시하고 조회 도구 이름을 한국어로 정리했습니다.
+- 테이블 API의 `total`로 마지막 페이지를 판별합니다.
+- 문서 검색·테이블 조회의 늦은 응답을 무시하고, 접근 코드는 ‘적용하고 닫기’를 눌렀을 때만 저장합니다.
+- 새 대화·프로젝트 전환 시 입력 초안과 이전 대화를 비우고 음성 요청을 취소합니다. 이미 시작된 서버의 유료 호출 취소를 보장하지는 않습니다.
+- 프런트 빌드 및 Python 테스트 36개 통과, 1개 건너뜀. 임시 SQLite DB로 데스크톱/390px 화면과 모의 음성 수명주기를 확인했습니다.
+- 실제 유료 AI·음성, 실기기 마이크, PostgreSQL, Docker 실행 및 외부 배포는 이번 검증에 포함하지 않았습니다.
+
+
+## 2026-10-11 실제 유료 AI·음성 검증
+
+서버 `.env` 키와 임시 SQLite 샘플 DB로 실제 API를 호출했습니다. [검증 기록](../docs/paid-ai-voice-verification-2026-10-11.json)에 답변과 수신 통계를 남겼습니다.
+
+- `gpt-4.1`: 자재 조회와 FAT 문서 질문 2건 모두 HTTP 200. 각각 약 3.2초/2.6초였고 원본 레코드·문서 근거를 반환했습니다. 자재 답변의 LOT `ML-260901`, 수량 `4 EA`, 두께 `12 mm`를 원본과 대조했습니다.
+- `gpt-realtime-2.1` / `marin`: 실제 WebRTC 연결, 한국어 음성 인식, `get_material_status` 호출, 근거 화면, 한국어 답변 오디오 수신, 음소거/해제, 종료 후 트랙·연결 정리를 확인했습니다. 최종 수신은 113,046 bytes, 1,408 packets이며 오디오 에너지가 0보다 컸습니다.
+- 첫 음성 답변이 조회시각을 근거 ID로 읽는 문제가 있어 지침을 수정했습니다. 수정 후 추가 유료 검증에서는 빈 조회 결과를 ‘일치하는 기록 없음’으로 설명했고 ID·수량을 만들지 않았습니다.
+- 초기 AudioContext 음성 주입은 인식 대기시간을 초과했습니다. 이후 Chromium의 파일 기반 테스트 마이크로 성공했습니다. 물리 마이크·스피커 청취 품질, 실제 끼어들기, 모바일 실기기, PostgreSQL 및 외부 배포 검증은 포함하지 않습니다.
+
+재실행은 실제 비용이 발생하며 명시적 환경변수가 있어야 실행됩니다. 연결 준비 시간을 고려해 앞에 약 8초 무음이 있는 한국어 PCM WAV를 준비하세요. 서버에는 키가 설정되어 있어야 합니다. Playwright가 별도 위치에 있으면 `PLAYWRIGHT_MODULE`을 지정합니다.
+
+```bash
+KGT_LIVE=1 KGT_URL=http://127.0.0.1:18521 \
+KGT_TEST_WAV=/absolute/path/to/test-question.wav \
+node v2/tests/browser-live.cjs
+```
+
+문자 검증을 반복하지 않고 음성만 검증하려면 `KGT_SKIP_TEXT=1`을 추가합니다. 결과 경로는 기본 `/tmp/kgt-live-report.json`이며 `KGT_LIVE_REPORT`로 변경할 수 있습니다. 테스트 브라우저는 종료되고 실제 마이크는 사용하지 않습니다.

@@ -86,6 +86,24 @@ def test_realtime_session_uses_actual_manufacturing_tools(client, monkeypatch):
     assert response.status_code == 200 and 'fake-key' not in response.text
     session = json.loads(captured['files']['session'][1])
     assert 'KGT-26001' in session['instructions']
+    assert '조회시각은 근거 ID가 아닙니다' in session['instructions']
+    assert '결과가 비어 있으면' in session['instructions']
     assert 'get_material_status' in {item['name'] for item in session['tools']}
     assert session['audio']['input']['turn_detection']['interrupt_response'] is True
     assert client.post('/api/realtime/session', content=b'\xff', headers={'Content-Type': 'application/sdp'}).status_code == 400
+
+
+def test_table_pagination_and_voice_provenance(client):
+    first = client.get('/api/tables/materials').json()
+    last = client.get(f"/api/tables/materials?offset={first['total']}").json()
+    assert first['total'] >= len(first['records']) > 0
+    assert last['records'] == []
+    assert last['meta']['retrieved_at']
+    response = client.post('/api/realtime/tool', json={
+        'name': 'get_material_status', 'arguments': {'project_id': 'KGT-26001'}
+    }).json()
+    evidence = json.loads(response['output'])
+    assert evidence['meta'] == response['meta']
+    assert evidence['meta']['demo_data'] is True
+    assert evidence['meta']['approval_status'] == '미승인 샘플'
+    assert evidence['meta']['source']

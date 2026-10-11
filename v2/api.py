@@ -111,7 +111,7 @@ def create_app(repository=None):
     def table(table: str, offset: int = Query(default=0, ge=0)):
         if table not in repo().TABLE_LABELS:
             raise HTTPException(404, '조회할 수 없는 테이블입니다.')
-        return {'records': repo().table_records(table, limit=10, offset=offset), 'meta': meta()}
+        return {'records': repo().table_records(table, limit=10, offset=offset), 'total': next(item['count'] for item in repo().table_inventory() if item['table'] == table), 'meta': meta()}
 
     @app.post('/api/chat')
     def chat(body: Chat):
@@ -166,7 +166,10 @@ def create_app(repository=None):
         registry = KyungdongToolRegistry(repo())
         if body.name not in {item['name'] for item in registry.definitions}:
             raise HTTPException(400, '허용되지 않은 조회 도구입니다.')
-        return {'output': registry.execute(body.name, body.arguments), 'meta': meta()}
+        metadata = meta()
+        output = json.loads(registry.execute(body.name, body.arguments))
+        output['meta'] = metadata
+        return {'output': json.dumps(output, ensure_ascii=False), 'meta': metadata}
 
     @app.post('/api/realtime/session')
     async def realtime_session(request: Request, project_id: Optional[str] = Query(default=None, max_length=80)):
@@ -184,7 +187,11 @@ def create_app(repository=None):
         registry = KyungdongToolRegistry(repo())
         session = {'type': 'realtime', 'model': os.getenv('OPENAI_REALTIME_MODEL', 'gpt-realtime-2.1'),
                    'instructions': '경동글로벌텍 금속제조 업무 도우미입니다. 한국어로 짧게 답하세요. '
-                   '회사 사실은 반드시 조회 도구로 확인하고 근거 ID와 단위를 말하세요. 자료는 미승인 데모이며 없는 값은 미확인입니다. '
+                   '회사 사실은 반드시 조회 도구로 확인하세요. 근거 ID는 원본 레코드에 있는 project_id, material_lot, document_id 등 실제 식별자만 말하세요. '
+                   'retrieved_at과 조회시각은 근거 ID가 아닙니다. 결과가 비어 있으면 선택 프로젝트에서 일치하는 기록을 찾지 못했다고 말하고 '
+                   '근거 ID나 수량·단위를 만들지 마세요. 조회된 기록의 부재를 실제 재고가 0이라는 뜻으로 해석하지 마세요. '
+                   '값과 단위는 원본에 있을 때만 말하세요. 답변은 두 문장 이내로 하고 조회시각은 사용자가 요청할 때만 읽으세요. '
+                   '자료는 미승인 데모이며 없는 값은 미확인입니다. '
                    '설비 제어·발주·FAT 승인·출하 승인을 실행하지 마세요. 식별자가 불명확하면 재확인하세요. '
                    f'현재 선택 프로젝트: {project_id or "전체"}. 도구의 project_id에 이 값을 사용하세요.',
                    'tools': [{k: v for k, v in item.items() if k != 'strict'} for item in registry.definitions],

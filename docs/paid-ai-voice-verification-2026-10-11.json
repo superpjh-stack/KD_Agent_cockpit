@@ -1,0 +1,134 @@
+{
+  "verified_at": "2026-10-11T13:27:40.195Z",
+  "environment": "Temporary SQLite sample DB; real paid OpenAI APIs; Chromium file microphone; no physical microphone",
+  "models": {
+    "text": "gpt-4.1",
+    "voice": "gpt-realtime-2.1",
+    "voice_name": "marin"
+  },
+  "text": [
+    {
+      "question": "선택한 프로젝트의 자재 LOT와 부족 재고를 조회하고 원본 수량·단위와 근거를 간단히 알려줘.",
+      "http_status": 200,
+      "elapsed_ms": 3192,
+      "text": "프로젝트 KGT-26001의 자재 LOT ML-260901이 있고 재고 수량은 4개입니다. 단위는 EA이며 소재는 SUS316L Plate, 두께 12mm입니다. 부족 재고는 현재 조회된 항목에 없습니다. 다른 자재나 부족분이 더 있을 수 있으니 추가 확인이 필요합니다. 근거: 자재 현황 ML-260901 / 미승인 데모 자료",
+      "tools": [
+        "get_material_status"
+      ],
+      "meta": {
+        "demo_data": true,
+        "source": "경동글로벌텍 검증용 DB · 샘플 문서",
+        "approval_status": "미승인 샘플",
+        "retrieved_at": "2026-10-11T13:19:28.499338+00:00"
+      }
+    },
+    {
+      "question": "FAT 체크리스트 문서를 찾아 문서 ID와 확인 항목 두 개만 알려줘.",
+      "http_status": 200,
+      "elapsed_ms": 2561,
+      "text": "FAT 체크리스트 문서는 ID가 KGT-KB-009입니다.  \n확인 항목은 \"장비·시험항목·측정값·단위·판정기준 문서·결과·입회자·재시험 이력\" 기록과 \"불합격 시 조치 후 재시험\"입니다.  \n근거: 문서 KGT-KB-009_FAT_체크리스트.md",
+      "tools": [
+        "search_knowledge"
+      ],
+      "meta": {
+        "demo_data": true,
+        "source": "경동글로벌텍 검증용 DB · 샘플 문서",
+        "approval_status": "미승인 샘플",
+        "retrieved_at": "2026-10-11T13:19:31.087286+00:00"
+      }
+    }
+  ],
+  "voice": {
+    "http_status": 200,
+    "connected": true,
+    "muted": true,
+    "unmuted": true,
+    "cleaned_up": true,
+    "audio": [
+      {
+        "bytesReceived": 113046,
+        "packetsReceived": 1408,
+        "totalAudioEnergy": 0.6671475272469239
+      }
+    ],
+    "messages": [
+      "나선택한 프로젝트의 자재 재고를 조회하고 부족한 자재 하나를 짧게 알려주세요.",
+      "경동 Agent음성 AI잠시만요, 선택된 프로젝트의 자재 상태를 확인하고 부족 이슈를 하나 짚어볼게요.",
+      "경동 Agent음성 AI음성 답변에 사용한 원본 조회 근거입니다.원본 데이터 근거 · 자재 LOT·재고조회된 기록이 없습니다.검증용 데이터 · 경동글로벌텍 검증용 DB · 샘플 문서 · 미승인 샘플 · 조회 2026. 10. 11. 오후 10:27:27",
+      "경동 Agent음성 AI선택된 프로젝트에서 일치하는 부족 자재 기록을 찾지 못했습니다. 이 결과만으로 실제 재고가 0이라고 해석할 수는 없어요."
+    ]
+  },
+  "voice_events": [
+    {
+      "type": "conversation.item.input_audio_transcription.completed",
+      "transcript": "선택한 프로젝트의 자재 재고를 조회하고 부족한 자재 하나를 짧게 알려주세요."
+    },
+    {
+      "type": "response.output_audio_transcript.done",
+      "transcript": "잠시만요, 선택된 프로젝트의 자재 상태를 확인하고 부족 이슈를 하나 짚어볼게요."
+    },
+    {
+      "type": "response.function_call_arguments.done",
+      "name": "get_material_status"
+    },
+    {
+      "type": "response.done",
+      "status": "completed",
+      "usage": {
+        "total_tokens": 1476,
+        "input_tokens": 1287,
+        "output_tokens": 189,
+        "input_token_details": {
+          "text_tokens": 1219,
+          "audio_tokens": 68,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 75,
+          "audio_tokens": 114
+        }
+      }
+    },
+    {
+      "type": "response.output_audio_transcript.done",
+      "transcript": "선택된 프로젝트에서 일치하는 부족 자재 기록을 찾지 못했습니다. 이 결과만으로 실제 재고가 0이라고 해석할 수는 없어요."
+    },
+    {
+      "type": "response.done",
+      "status": "completed",
+      "usage": {
+        "total_tokens": 1661,
+        "input_tokens": 1441,
+        "output_tokens": 220,
+        "input_token_details": {
+          "text_tokens": 1373,
+          "audio_tokens": 68,
+          "image_tokens": 0,
+          "cached_tokens": 1280,
+          "cached_tokens_details": {
+            "text_tokens": 1216,
+            "audio_tokens": 64,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 55,
+          "audio_tokens": 165
+        }
+      }
+    }
+  ],
+  "corrected_issue": "Initial successful voice transport test read retrieved_at as evidence ID for an empty result. Instructions now prohibit fabricated IDs, units and counts; final paid test did not repeat this error.",
+  "limitations": [
+    "Initial AudioContext-based test input timed out; Chromium file microphone succeeded.",
+    "Physical microphone/speaker listening quality, real barge-in, mobile device, PostgreSQL and deployment not verified.",
+    "This is a small smoke test, not a comprehensive model quality evaluation."
+  ],
+  "passed": true
+}
