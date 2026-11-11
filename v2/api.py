@@ -21,13 +21,52 @@ from pydantic import BaseModel, Field
 from kyungdong_agent.data_hub import create_repository, PostgresRepository
 from kyungdong_agent.factory_tools import KyungdongToolRegistry
 from kyungdong_agent.service import ManufacturingAgent, DEFAULT_MODEL
+from v2.wake import WAKE_POLICY, calls_agent, addressed_question
 
 ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(ROOT / '.env')
-QUESTIONS = {
-    '생산·품질': ['프로젝트 공정 진행 현황을 알려줘', '납기 지연 공정을 확인해줘', '자재 LOT와 재고 상태를 알려줘', '입고검사 보류 원인을 알려줘', 'MTC 누락 자재를 확인해줘', '공급사 납기 위험을 알려줘', 'FAT 불합격 결과를 보여줘', '견적 원가와 수익성을 조회해줘', '설계 도면 Revision을 확인해줘', '프로젝트별 확인할 일을 알려줘'],
-    '문서·규칙': ['제조공정 전체 흐름을 알려줘', '견적 원가 산정 지침을 찾아줘', '도면 변경 승인 절차를 찾아줘', '자재 입고 검사기준을 찾아줘', '대체자재 승인 절차를 찾아줘', '레이저절단 작업표준을 찾아줘', '절곡 포밍 품질사례를 찾아줘', '용접 조립 검사절차를 찾아줘', 'FAT 체크리스트를 찾아줘', '납기지연 대응사례를 찾아줘'],
-}
+DOCUMENT_QUESTIONS = [addressed_question(q) for q in ['제조공정 전체 흐름을 알려줘', '견적 원가 산정 지침을 찾아줘', '도면 변경 승인 절차를 찾아줘', '자재 입고 검사기준을 찾아줘', '대체자재 승인 절차를 찾아줘', '레이저절단 작업표준을 찾아줘', '절곡 포밍 품질사례를 찾아줘', '용접 조립 검사절차를 찾아줘', 'FAT 체크리스트를 찾아줘', '납기지연 대응사례를 찾아줘']]
+
+
+def data_questions(repository) -> list[str]:
+    """Build up to ten recommendations from current read-only factory records."""
+    questions: list[str] = []
+
+    def add(text: str) -> None:
+        question = addressed_question(text)
+        if question not in questions:
+            questions.append(question)
+
+    materials = repository.material_status(issues_only=True)
+    for row in materials:
+        add(f"{row['project_id']}의 자재 {row['material_lot']} {row['stock_status']} 상태와 조치를 알려줘")
+
+    inspections = repository.inspection_issues()
+    for row in inspections:
+        add(f"{row['project_id']} 입고검사 {row['inspection_id']} 보류 원인과 재확인 항목을 알려줘")
+
+    for row in repository.procurement_risks():
+        add(f"{row['project_id']} {row['supplier']} 발주 {row['po_no']} 납기 위험과 대체 후보를 알려줘")
+
+    for row in repository.fat_quality():
+        if row.get('result') == '불합격':
+            add(f"{row['project_id']} FAT {row['test_id']} 불합격 원인과 재시험 계획을 알려줘")
+
+    for row in repository.equipment_alerts():
+        add(f"{row['project_id']} 설비 {row['equipment']}의 {row['metric']} 주의값과 확인할 일을 알려줘")
+
+    for row in repository.lead_time_status():
+        if row.get('delayed_operations') or (row.get('progress_pct') is not None and row['progress_pct'] < 60):
+            add(f"{row['project_id']} 납기 지연 공정과 담당 조치를 알려줘")
+
+    for row in repository.quote_analysis():
+        if row.get('risk_score') is not None and row['risk_score'] >= 0.4:
+            add(f"{row['project_id']} 견적 원가·수익성·납기 위험을 알려줘")
+
+    for row in repository.projects():
+        add(f"{row['project_id']} {row['equipment_type']} 프로젝트의 현재 진행 현황을 알려줘")
+
+    return questions[:10]
 
 
 class Turn(BaseModel):
@@ -98,10 +137,11 @@ def create_app(repository=None):
 
     @app.get('/api/workspace')
     def workspace():
+        questions = {'데이터 기반': data_questions(repo()), '문서·규칙': DOCUMENT_QUESTIONS}
         return {'projects': repo().projects(), 'tables': repo().table_inventory(),
-                'questions': QUESTIONS, 'kpi': repo().dashboard(),
+                'questions': questions, 'kpi': repo().dashboard(),
                 'meta': {**meta(), 'backend': 'PostgreSQL + pgvector' if isinstance(repo(), PostgresRepository) else 'SQLite',
-                         'ai_configured': bool(os.getenv('OPENAI_API_KEY')), 'model': os.getenv('OPENAI_MODEL', DEFAULT_MODEL)}}
+                         'ai_configured': bool(os.getenv('OPENAI_API_KEY')), 'model': os.getenv('OPENAI_MODEL', DEFAULT_MODEL), 'wake': WAKE_POLICY}}
 
     @app.get('/api/documents')
     def documents(q: str = Query(default='', max_length=300)):
@@ -118,6 +158,8 @@ def create_app(repository=None):
         question = body.question.strip()
         if not question:
             raise HTTPException(422, '질문을 입력해 주세요.')
+        if not calls_agent(question):
+            return {'ignored': True, 'text': '', 'sources': [], 'evidence': [], 'data_evidence': [], 'data_tools': [], 'mode': body.mode, 'meta': meta(), 'wake': WAKE_POLICY}
         mentioned = re.search(r'KGT-\d{5}', question.upper())
         project = mentioned.group() if mentioned else body.project_id
         check_project(project)
@@ -187,6 +229,7 @@ def create_app(repository=None):
         registry = KyungdongToolRegistry(repo())
         session = {'type': 'realtime', 'model': os.getenv('OPENAI_REALTIME_MODEL', 'gpt-realtime-2.1'),
                    'instructions': '경동글로벌텍 금속제조 업무 도우미입니다. 한국어로 짧게 답하세요. '
+                   f"호출명은 {WAKE_POLICY['agent_name']}입니다. 호출명으로 시작한 질문에만 답하고, 호출명 없는 발화에는 아무 응답도 하지 마세요. "
                    '회사 사실은 반드시 조회 도구로 확인하세요. 근거 ID는 원본 레코드에 있는 project_id, material_lot, document_id 등 실제 식별자만 말하세요. '
                    'retrieved_at과 조회시각은 근거 ID가 아닙니다. 결과가 비어 있으면 선택 프로젝트에서 일치하는 기록을 찾지 못했다고 말하고 '
                    '근거 ID나 수량·단위를 만들지 마세요. 조회된 기록의 부재를 실제 재고가 0이라는 뜻으로 해석하지 마세요. '
@@ -197,7 +240,7 @@ def create_app(repository=None):
                    'tools': [{k: v for k, v in item.items() if k != 'strict'} for item in registry.definitions],
                    'output_modalities': ['audio'],
                    'audio': {'input': {'transcription': {'model': 'gpt-4o-mini-transcribe', 'language': 'ko'},
-                                       'turn_detection': {'type': 'semantic_vad', 'create_response': True, 'interrupt_response': True}},
+                                       'turn_detection': {'type': 'semantic_vad', 'eagerness': 'high', 'create_response': False, 'interrupt_response': False}},
                              'output': {'voice': os.getenv('OPENAI_REALTIME_VOICE', 'marin')}}}
         try:
             async with httpx.AsyncClient(timeout=30) as client:

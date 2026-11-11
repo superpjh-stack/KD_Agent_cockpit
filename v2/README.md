@@ -13,7 +13,7 @@ npm run build --prefix v2/web
 DATABASE_URL='' .venv/bin/python -m uvicorn v2.api:app --host 127.0.0.1 --port 8511
 ```
 
-접속: http://127.0.0.1:8511. 위 명령은 기존 SQLite 데모 DB를 사용합니다. PostgreSQL을 사용하려면 `DATABASE_URL=''` 접두사를 제거하고 루트 `.env`에 실제 연결 정보를 설정하세요. 기존 `create_repository`가 PostgreSQL 어댑터를 선택하며, 이번 변경에서 PostgreSQL 실행 검증은 하지 않았습니다.
+또는 프로젝트 루트에서 `./start-v2.sh`를 실행하세요. 접속: http://127.0.0.1:8511. 위 명령은 기존 SQLite 데모 DB를 사용합니다. PostgreSQL을 사용하려면 `DATABASE_URL=''` 접두사를 제거하고 루트 `.env`에 실제 연결 정보를 설정하세요. 기존 `create_repository`가 PostgreSQL 어댑터를 선택하며, 이번 변경에서 PostgreSQL 실행 검증은 하지 않았습니다.
 
 프런트 개발은 별도 터미널에서 `npm run dev --prefix v2/web`로 실행합니다. Vite의 `/api` 프록시는 8511 포트입니다. 기존 8510 포트가 사용 중이라 경동 V2의 기본 포트를 8511로 분리했습니다.
 

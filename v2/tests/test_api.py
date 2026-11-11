@@ -17,7 +17,7 @@ def client(tmp_path, monkeypatch):
 
 def test_workspace_and_read_only_tables(client):
     data = client.get('/api/workspace').json()
-    assert len(data['questions']['생산·품질']) == 10
+    assert len(data['questions']['데이터 기반']) == 10
     assert len(data['questions']['문서·규칙']) == 10
     assert data['meta']['demo_data'] is True
     assert data['meta']['ai_configured'] is False
@@ -28,22 +28,22 @@ def test_workspace_and_read_only_tables(client):
 
 def test_project_isolation_and_explicit_project(client):
     for project in ['KGT-26001', 'KGT-26002']:
-        response = client.post('/api/chat', json={'question': '자재 LOT를 알려줘', 'project_id': project})
+        response = client.post('/api/chat', json={'question': '경동아, 자재 LOT를 알려줘', 'project_id': project})
         assert response.status_code == 200
         data = response.json()
         assert data['mode'] == 'demo'
         rows = data['data_evidence'][0]['payload']['result']
         assert rows and all(row['project_id'] == project for row in rows)
-    explicit = client.post('/api/chat', json={'question': 'KGT-26002 자재 LOT', 'project_id': 'KGT-26001'}).json()
+    explicit = client.post('/api/chat', json={'question': '경동아, KGT-26002 자재 LOT', 'project_id': 'KGT-26001'}).json()
     assert explicit['project_id'] == 'KGT-26002'
-    assert client.post('/api/chat', json={'question': '현황', 'project_id': 'unknown'}).status_code == 404
+    assert client.post('/api/chat', json={'question': '경동아, 현황', 'project_id': 'unknown'}).status_code == 404
     assert client.post('/api/chat', json={'question': '  '}).status_code == 422
 
 
 def test_documents_and_evidence(client):
     docs = client.get('/api/documents?q=레이저').json()['documents']
     assert docs and any('레이저' in doc['content'] for doc in docs)
-    data = client.post('/api/chat', json={'question': 'FAT 체크리스트를 찾아줘'}).json()
+    data = client.post('/api/chat', json={'question': '경동아, FAT 체크리스트를 찾아줘'}).json()
     assert data['evidence'] and data['meta']['approval_status'] == '미승인 샘플'
 
 
@@ -54,7 +54,7 @@ def test_external_access_and_host_spoofing(client):
 
 
 def test_ai_requires_server_key_and_tools_allowlist(client):
-    assert client.post('/api/chat', json={'question': '현황', 'mode': 'ai'}).status_code == 503
+    assert client.post('/api/chat', json={'question': '경동아, 현황', 'mode': 'ai'}).status_code == 503
     assert client.post('/api/realtime/tool', json={'name': 'delete_records'}).status_code == 400
     result = client.post('/api/realtime/tool', json={'name': 'get_material_status', 'arguments': {'project_id': 'KGT-26001'}}).json()
     output = json.loads(result['output'])
@@ -89,7 +89,8 @@ def test_realtime_session_uses_actual_manufacturing_tools(client, monkeypatch):
     assert '조회시각은 근거 ID가 아닙니다' in session['instructions']
     assert '결과가 비어 있으면' in session['instructions']
     assert 'get_material_status' in {item['name'] for item in session['tools']}
-    assert session['audio']['input']['turn_detection']['interrupt_response'] is True
+    assert session['audio']['input']['turn_detection']['create_response'] is False
+    assert session['audio']['input']['turn_detection']['interrupt_response'] is False
     assert client.post('/api/realtime/session', content=b'\xff', headers={'Content-Type': 'application/sdp'}).status_code == 400
 
 
@@ -107,3 +108,17 @@ def test_table_pagination_and_voice_provenance(client):
     assert evidence['meta']['demo_data'] is True
     assert evidence['meta']['approval_status'] == '미승인 샘플'
     assert evidence['meta']['source']
+
+
+def test_unaddressed_question_is_ignored_before_project_validation(client):
+    result = client.post('/api/chat', json={'question': '자재 LOT를 알려줘', 'project_id': 'unknown'})
+    assert result.status_code == 200
+    body = result.json()
+    assert body['ignored'] is True
+    assert body['text'] == '' and body['evidence'] == [] and body['data_evidence'] == []
+
+
+def test_wake_policy_is_exposed_and_recommended_questions_are_addressed(client):
+    data = client.get('/api/workspace').json()
+    assert data['meta']['wake']['agent_name'] == '경동아'
+    assert all(q.startswith('경동아') for group in data['questions'].values() for q in group)

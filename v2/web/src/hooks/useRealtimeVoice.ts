@@ -1,4 +1,5 @@
 import {useCallback,useEffect,useRef,useState} from 'react';
+import {callsAgent,KGT_WAKE_POLICY} from '../wake';
 
 export type RealtimeVoiceState='idle'|'permission'|'connecting'|'listening'|'speaking'|'responding'|'answering'|'error';
 type Turn={role:'user'|'assistant';text:string};
@@ -71,7 +72,11 @@ export function useRealtimeVoice(token:string,project:string,onTurn:(turn:Turn)=
    if(type==='input_audio_buffer.speech_started'){setState('speaking')}
    else if(type==='input_audio_buffer.speech_stopped')setState('responding');
    else if(type==='conversation.item.input_audio_transcription.completed'){
-    const transcript=String(event.transcript||'').trim();if(transcript){callback.current({role:'user',text:transcript})}
+    const transcript=String(event.transcript||'').trim();
+    if(transcript&&callsAgent(transcript,KGT_WAKE_POLICY)){
+     callback.current({role:'user',text:transcript});
+     if(channel.current?.readyState==='open')channel.current.send(JSON.stringify({type:'response.create'}));
+    }
    }else if(type==='response.created')setState('responding');
    else if(type==='response.output_audio.delta'){setState('answering')}
    else if(type==='response.output_audio_transcript.delta'){setState('answering');assistantText.current+=String(event.delta||'')}
