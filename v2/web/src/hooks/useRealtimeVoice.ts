@@ -1,3 +1,4 @@
+import {apiPath} from '../apiPath';
 import {useCallback,useEffect,useRef,useState} from 'react';
 import {callsAgent,KGT_WAKE_POLICY} from '../wake';
 
@@ -45,7 +46,7 @@ export function useRealtimeVoice(token:string,project:string,onTurn:(turn:Turn)=
   let output:string;
   const request=new AbortController();requests.current.add(request);
   try{
-   const response=await fetch('/api/realtime/tool',{signal:request.signal,method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify({name,arguments:name === "analyze_manufacturing_question" ? {...args, project_id:project || null, history:voiceHistory.current} : args})});
+   const response=await fetch(apiPath('/api/realtime/tool'),{signal:request.signal,method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify({name,arguments:name === "analyze_manufacturing_question" ? {...args, project_id:project || null, history:voiceHistory.current} : args})});
    const payload=await response.json().catch(()=>({}));
    if(!response.ok)throw new Error(String(payload.detail||'제조 데이터 조회에 실패했습니다.'));
    output=String(payload.output||JSON.stringify({error:'빈 도구 응답'}));
@@ -142,7 +143,7 @@ export function useRealtimeVoice(token:string,project:string,onTurn:(turn:Turn)=
    setState('connecting');const offer=await peer.createOffer();if(run!==epoch.current)return;await peer.setLocalDescription(offer);if(run!==epoch.current)return;
    const params=new URLSearchParams();if(project)params.set('project_id',project);
    const request=new AbortController();requests.current.add(request);
-   const response=await fetch('/api/realtime/session'+(params.size?'?'+params:''),{signal:request.signal,method:'POST',headers:{'Content-Type':'application/sdp',Authorization:'Bearer '+token},body:offer.sdp});
+   const response=await fetch(apiPath('/api/realtime/session')+(params.size?'?'+params:''),{signal:request.signal,method:'POST',headers:{'Content-Type':'application/sdp',Authorization:'Bearer '+token},body:offer.sdp});
    const answer=await response.text();requests.current.delete(request);if(!response.ok){let message='실시간 음성 세션을 시작하지 못했습니다.';try{message=JSON.parse(answer).detail||message}catch{}throw new Error(message)}
    if(run!==epoch.current)return;await peer.setRemoteDescription({type:'answer',sdp:answer});
   }catch(e){if(run===epoch.current){const message=(e as Error).name==='NotAllowedError'?'마이크 권한을 허용해 주세요.':(e as Error).message;stop();setError(message);setState('error')}}

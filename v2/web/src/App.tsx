@@ -1,3 +1,4 @@
+import {apiPath} from './apiPath';
 import {useEffect, useRef, useState} from 'react';
 import {ArrowUp, BookOpen, Database, History, Mic, Plus, Settings, X, Factory} from 'lucide-react';
 import {useRealtimeVoice} from './hooks/useRealtimeVoice';
@@ -41,7 +42,7 @@ export default function App() {
   try {const payload = JSON.parse(output); if(name === 'analyze_manufacturing_question'){setMessages(current => [...current, {role:'assistant', ...payload, mode:'음성 AI'}]); return;} setMessages(current => [...current, {role: 'assistant', text: payload.error ? '음성 데이터 조회에 실패했습니다. 아래 내용을 확인하세요.' : '음성 답변에 사용한 원본 조회 근거입니다.', mode: '음성 AI', data_evidence: [{tool: name, payload}], meta: payload.meta}])} catch { /* Invalid tool output is not evidence. */ }
  });
  async function api(path: string, options: RequestInit = {}) {
-  const response = await fetch(path, {...options, headers: {'Content-Type': 'application/json', Authorization: 'Bearer ' + token, ...options.headers}});
+  const response = await fetch(apiPath(path), {...options, headers: {'Content-Type': 'application/json', Authorization: 'Bearer ' + token, ...options.headers}});
   const data = await response.json();
   if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : '요청을 처리하지 못했습니다.');
   return data;
