@@ -48,7 +48,7 @@ class CompoundGraph:
         def call(instructions, payload, structured=False):
             kwargs = {'text': {'format': {'type': 'json_object'}}} if structured else {}
             response = self.client.with_options(timeout=remaining(), max_retries=0).responses.create(
-                model=self.model, instructions=instructions, input=json.dumps(payload, ensure_ascii=False), **kwargs)
+                model=self.model, instructions=instructions, input=json.dumps({'response_format': 'json', 'data': payload} if structured else payload, ensure_ascii=False), **kwargs)
             return response.output_text
         def defaults(name):
             props = definitions[name]['parameters']['properties']

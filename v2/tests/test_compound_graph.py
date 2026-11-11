@@ -34,7 +34,7 @@ def test_ai_second_plan_uses_results_and_cannot_escape_scope(tmp_path):
             if self.calls==1:
                 output={'tasks':[{'request':'자재','tool':'get_material_status','arguments':{'project_id':'KGT-26002','issues_only':False}}]}
             elif self.calls==2:
-                assert json.loads(kwargs['input'])['previous_results']
+                assert json.loads(kwargs['input'])['data']['previous_results']
                 output={'tasks':[{'request':'품질','tool':'get_fat_quality','arguments':{}},{'request':'삭제','tool':'delete_records','arguments':{}}]}
             else: return SimpleNamespace(output_text='자재와 품질 근거를 확인했습니다.')
             return SimpleNamespace(output_text=json.dumps(output))
