@@ -4,7 +4,7 @@ import re
 WAKE_POLICY = {
     "agent_name": "경동아",
     "wake_aliases": ["경동아"],
-    "require_wake_name": True,
+    "require_wake_name": False,
 }
 
 
@@ -21,4 +21,4 @@ def calls_agent(text: str, policy: dict = WAKE_POLICY) -> bool:
 
 
 def addressed_question(question: str) -> str:
-    return f"{WAKE_POLICY['agent_name']}, {question}"
+    return question

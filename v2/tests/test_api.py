@@ -17,8 +17,8 @@ def client(tmp_path, monkeypatch):
 
 def test_workspace_and_read_only_tables(client):
     data = client.get('/api/workspace').json()
-    assert len(data['questions']['데이터 기반']) == 10
-    assert len(data['questions']['문서·규칙']) == 10
+    assert len(data['questions']['데이터 대시보드']) == 10
+    assert len(data['questions']['지식베이스']) == 10
     assert data['meta']['demo_data'] is True
     assert data['meta']['ai_configured'] is False
     assert client.get('/api/tables/app_settings').status_code == 404
@@ -88,9 +88,9 @@ def test_realtime_session_uses_actual_manufacturing_tools(client, monkeypatch):
     assert 'KGT-26001' in session['instructions']
     assert '조회시각은 근거 ID가 아닙니다' in session['instructions']
     assert '결과가 비어 있으면' in session['instructions']
-    assert 'get_material_status' in {item['name'] for item in session['tools']}
+    assert 'analyze_manufacturing_question' in {item['name'] for item in session['tools']}
     assert session['audio']['input']['turn_detection']['create_response'] is False
-    assert session['audio']['input']['turn_detection']['interrupt_response'] is False
+    assert session['audio']['input']['turn_detection']['interrupt_response'] is True
     assert client.post('/api/realtime/session', content=b'\xff', headers={'Content-Type': 'application/sdp'}).status_code == 400
 
 
@@ -110,15 +110,14 @@ def test_table_pagination_and_voice_provenance(client):
     assert evidence['meta']['source']
 
 
-def test_unaddressed_question_is_ignored_before_project_validation(client):
-    result = client.post('/api/chat', json={'question': '자재 LOT를 알려줘', 'project_id': 'unknown'})
+def test_unaddressed_question_returns_evidence(client):
+    result = client.post('/api/chat', json={'question': '자재 LOT를 알려줘', 'project_id': 'KGT-26001'})
     assert result.status_code == 200
-    body = result.json()
-    assert body['ignored'] is True
-    assert body['text'] == '' and body['evidence'] == [] and body['data_evidence'] == []
+    assert result.json()['data_evidence']
+    assert not result.json().get('ignored')
 
 
-def test_wake_policy_is_exposed_and_recommended_questions_are_addressed(client):
+def test_questions_display_without_required_wake_name(client):
     data = client.get('/api/workspace').json()
-    assert data['meta']['wake']['agent_name'] == '경동아'
-    assert all(q.startswith('경동아') for group in data['questions'].values() for q in group)
+    assert data['meta']['wake']['require_wake_name'] is False
+    assert all(not q.startswith('경동아') for group in data['questions'].values() for q in group)

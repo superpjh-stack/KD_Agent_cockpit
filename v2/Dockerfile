@@ -9,7 +9,8 @@ FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 KGT_SQLITE_PATH=/app/data/kyungdong_demo_v2.db
 WORKDIR /app
 COPY requirements.txt ./requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt fastapi uvicorn httpx
+COPY v2/requirements.txt ./v2/requirements.txt
+RUN pip install --no-cache-dir -r v2/requirements.txt
 COPY kyungdong_agent ./kyungdong_agent
 COPY sample_docs ./sample_docs
 COPY data/kyungdong_demo.db ./data/kyungdong_demo.db

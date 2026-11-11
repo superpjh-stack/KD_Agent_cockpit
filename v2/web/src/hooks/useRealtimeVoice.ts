@@ -8,15 +8,23 @@ export function useRealtimeVoice(token:string,project:string,onTurn:(turn:Turn)=
  const [state,setState]=useState<RealtimeVoiceState>('idle'),[error,setError]=useState(''),[muted,setMuted]=useState(false),[needsPlay,setNeedsPlay]=useState(false);
  const pc=useRef<RTCPeerConnection|null>(null),channel=useRef<RTCDataChannel|null>(null),media=useRef<MediaStream|null>(null),audio=useRef<HTMLAudioElement|null>(null),epoch=useRef(0);
  const requests=useRef(new Set<AbortController>());
+ const turnEpoch=useRef(0), requestedTurn=useRef(0);
+ const responseTurns=useRef(new Map<string,number>());
+ const voiceHistory=useRef<Turn[]>([]);
  const toolCalls=useRef(new Set<string>());
  const toolOutputs=useRef(new Map<string,{name:string;output:string}>());
  const toolsInResponse=useRef(0);
+ const responseActive=useRef(false),queuedResponse=useRef(false);
+ function requestResponse(){
+  if(responseActive.current){queuedResponse.current=true;return}
+  if(channel.current?.readyState==='open'){responseActive.current=true;requestedTurn.current=turnEpoch.current;queuedResponse.current=false;channel.current.send(JSON.stringify({type:'response.create'}))}
+ }
  const assistantText=useRef(''),callback=useRef(onTurn);callback.current=onTurn;
  const evidenceCallback=useRef(onEvidence);evidenceCallback.current=onEvidence;
  const supported=window.isSecureContext&&!!navigator.mediaDevices?.getUserMedia&&typeof RTCPeerConnection!=='undefined';
 
  const stop=useCallback(()=>{
-  epoch.current++;
+  voiceHistory.current=[];turnEpoch.current++;responseTurns.current.clear();epoch.current++;responseActive.current=false;queuedResponse.current=false;
   requests.current.forEach(request=>request.abort());requests.current.clear();
   channel.current?.close();channel.current=null;
   pc.current?.close();pc.current=null;
@@ -28,62 +36,93 @@ export function useRealtimeVoice(token:string,project:string,onTurn:(turn:Turn)=
  useEffect(()=>{stop()},[token,project,stop]);
 
  const play=useCallback(async()=>{if(!audio.current)return;try{await audio.current.play();setNeedsPlay(false)}catch{setNeedsPlay(true);setError('소리가 준비됐습니다. 재생을 눌러 주세요.')}},[]);
- function finishAssistant(text?:string){const final=(text||assistantText.current).trim();assistantText.current='';if(final)callback.current({role:'assistant',text:final})}
+ function finishAssistant(text?:string){const final=(text||assistantText.current).trim();assistantText.current='';if(final){voiceHistory.current=[...voiceHistory.current,{role:'assistant' as const,text:final}].slice(-12);callback.current({role:'assistant',text:final})}}
  async function runTool(name:string,callId:string,argumentsText:string,run:number){
   if(run!==epoch.current||!callId||toolCalls.current.has(callId))return;toolCalls.current.add(callId);toolsInResponse.current++;
+  const turn=turnEpoch.current;
   let args:Record<string,unknown>={};
   try{args=JSON.parse(argumentsText||'{}') as Record<string,unknown>}catch{args={}}
   let output:string;
   const request=new AbortController();requests.current.add(request);
   try{
-   const response=await fetch('/api/realtime/tool',{signal:request.signal,method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify({name,arguments:args})});
+   const response=await fetch('/api/realtime/tool',{signal:request.signal,method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify({name,arguments:name === "analyze_manufacturing_question" ? {...args, project_id:project || null, history:voiceHistory.current} : args})});
    const payload=await response.json().catch(()=>({}));
    if(!response.ok)throw new Error(String(payload.detail||'제조 데이터 조회에 실패했습니다.'));
    output=String(payload.output||JSON.stringify({error:'빈 도구 응답'}));
   }catch(e){output=JSON.stringify({error:(e as Error).message})}finally{requests.current.delete(request)}
-  if(run!==epoch.current)return;
+  if(run!==epoch.current||turn!==turnEpoch.current)return;
   toolOutputs.current.set(callId,{name,output});
  }
  async function finishResponse(run:number){
+  const turn=turnEpoch.current;
   if(run!==epoch.current)return;
   finishAssistant();
   if(toolsInResponse.current){
    setState('responding');
-   while(run===epoch.current&&toolsInResponse.current){
+   while(run===epoch.current&&turn===turnEpoch.current&&toolsInResponse.current){
     const pending=[...toolCalls.current].filter(id=>toolOutputs.current.has(id));
     if(!pending.length){await new Promise(resolve=>setTimeout(resolve,20));continue}
     const dc=channel.current;
     if(!dc||dc.readyState!=='open')return;
     for(const id of pending){
-     const item=toolOutputs.current.get(id)!;toolOutputs.current.delete(id);toolsInResponse.current--;
+     const item=toolOutputs.current.get(id)!;toolOutputs.current.delete(id);toolCalls.current.delete(id);toolsInResponse.current--;
      evidenceCallback.current(item.name,item.output);
      dc.send(JSON.stringify({type:'conversation.item.create',item:{type:'function_call_output',call_id:id,output:item.output}}));
     }
    }
-   if(run===epoch.current&&channel.current?.readyState==='open')channel.current.send(JSON.stringify({type:'response.create'}));
+   if(run===epoch.current&&turn===turnEpoch.current)requestResponse();
    return;
   }
+  if(queuedResponse.current){requestResponse();return}
   setState('listening');
  }
  function handleEvent(raw:string,run:number){
   if(run!==epoch.current)return;
   try{
    const event=JSON.parse(raw) as Record<string,unknown>,type=String(event.type||'');
-   if(type==='input_audio_buffer.speech_started'){setState('speaking')}
+   const responseId=String(event.response_id||'');
+   if(responseId&&responseTurns.current.has(responseId)&&responseTurns.current.get(responseId)!==turnEpoch.current)return;
+   if(type==='input_audio_buffer.speech_started'){
+    turnEpoch.current++;queuedResponse.current=false;assistantText.current='';
+    requests.current.forEach(request=>request.abort());requests.current.clear();
+    const dc=channel.current;
+    if(dc?.readyState==='open'){
+     if(responseActive.current)dc.send(JSON.stringify({type:'response.cancel'}));
+     dc.send(JSON.stringify({type:'output_audio_buffer.clear'}));
+     for(const id of toolCalls.current)if(!toolOutputs.current.has(id))dc.send(JSON.stringify({type:'conversation.item.create',item:{type:'function_call_output',call_id:id,output:JSON.stringify({cancelled:true})}}));
+    }
+    toolCalls.current.clear();toolOutputs.current.clear();toolsInResponse.current=0;
+    setState('speaking');
+   }
    else if(type==='input_audio_buffer.speech_stopped')setState('responding');
    else if(type==='conversation.item.input_audio_transcription.completed'){
     const transcript=String(event.transcript||'').trim();
     if(transcript&&callsAgent(transcript,KGT_WAKE_POLICY)){
+     voiceHistory.current=[...voiceHistory.current,{role:'user' as const,text:transcript}].slice(-12);
      callback.current({role:'user',text:transcript});
-     if(channel.current?.readyState==='open')channel.current.send(JSON.stringify({type:'response.create'}));
+     requestResponse();
+    }else{
+     if(event.item_id&&channel.current?.readyState==='open')channel.current.send(JSON.stringify({type:'conversation.item.delete',item_id:event.item_id}));
+     if(!responseActive.current)setState('listening');
     }
-   }else if(type==='response.created')setState('responding');
+   }else if(type==='response.created'){
+    const response=event.response as {id?:string}|undefined;
+    if(response?.id)responseTurns.current.set(response.id,requestedTurn.current);
+    responseActive.current=true;
+    if(requestedTurn.current===turnEpoch.current)setState('responding');
+   }
    else if(type==='response.output_audio.delta'){setState('answering')}
    else if(type==='response.output_audio_transcript.delta'){setState('answering');assistantText.current+=String(event.delta||'')}
    else if(type==='response.output_audio_transcript.done')finishAssistant(String(event.transcript||''));
    else if(type==='response.function_call_arguments.done')void runTool(String(event.name||''),String(event.call_id||''),String(event.arguments||'{}'),run);
-   else if(type==='response.done'){void finishResponse(run)}
-   else if(type==='error'){const detail=event.error as Record<string,unknown>|undefined;stop();setError(String(detail?.message||'실시간 음성 연결에 문제가 생겼습니다.'));setState('error')}
+   else if(type==='response.done'){
+    responseActive.current=false;
+    const response=event.response as {id?:string}|undefined;
+    const old=response?.id ? responseTurns.current.get(response.id)!==turnEpoch.current : requestedTurn.current!==turnEpoch.current;
+    if(old){if(queuedResponse.current)requestResponse();return}
+    void finishResponse(run);
+   }
+   else if(type==='error'){const detail=event.error as Record<string,unknown>|undefined;if(detail?.code==='response_cancel_not_active')return;stop();setError(String(detail?.message||'실시간 음성 연결에 문제가 생겼습니다.'));setState('error')}
   }catch{/* Ignore unknown provider events; audio continues over WebRTC. */}
  }
  async function start(){

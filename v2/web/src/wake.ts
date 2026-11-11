@@ -1,5 +1,5 @@
 export type WakePolicy = {agent_name:string;wake_aliases:string[];require_wake_name:boolean};
-export const KGT_WAKE_POLICY:WakePolicy = {agent_name:'경동아',wake_aliases:['경동아'],require_wake_name:true};
+export const KGT_WAKE_POLICY:WakePolicy = {agent_name:'경동아',wake_aliases:['경동아'],require_wake_name:false};
 
 export function callsAgent(text:string, policy:WakePolicy):boolean {
  if(!policy.require_wake_name)return true;

@@ -10,3 +10,5 @@ data/postgres.log
 node_modules/
 v2/web/dist/
 *.tsbuildinfo
+
+.venv-v2/
