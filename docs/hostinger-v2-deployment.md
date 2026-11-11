@@ -2,9 +2,9 @@
 
 - VPS: 1934103 / srv1934103.hstgr.cloud
 - HTTPS: https://srv1934103.hstgr.cloud/kd-agent/
-- 애플리케이션 이미지: kyungdong-agent-v2:031af13
+- 애플리케이션 이미지: kyungdong-agent-v2:fa25179
 - 배포 디렉터리: /docker/kyungdong-agent-v2
-- 소스 릴리스: /docker/kyungdong-agent-v2/releases/031af13
+- 소스 릴리스: /docker/kyungdong-agent-v2/releases/fa25179
 - 컨테이너: kyungdong-agent-v2 / 포트 8511
 - 기존 runtime.env와 데이터 볼륨을 유지한다. 비밀 설정은 Git에 포함하지 않는다.
 
@@ -19,3 +19,5 @@
 - 기존 데이터 볼륨의 backup-before-031af13.db (SQLite backup API로 생성)
 
 서비스 롤백 시 이전 Compose를 복원해 해당 서비스만 재생성한다. 데이터 복원은 기존 DB와 변경 내역을 먼저 검토한 뒤 별도로 수행한다. 이전 UI는 subpath를 지원하지 않으므로 이미지 롤백 시 Caddy 경로도 함께 검토한다.
+
+서버 실호출에서 JSON 응답 형식의 input 명시 요구를 확인해 fa25179에서 수정했다. 기존 instruction 외에 입력 JSON에도 응답 형식을 명시한다.
