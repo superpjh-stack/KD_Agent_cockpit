@@ -1,3 +1,4 @@
 export function apiPath(path: string): string {
- return new URL(path.replace(/^\//, ''), window.location.href).pathname;
+ const url = new URL(path.replace(/^\//, ''), window.location.href);
+ return url.pathname + url.search;
 }
