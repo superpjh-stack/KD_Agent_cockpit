@@ -1,0 +1,70 @@
+const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
+const assert=require('node:assert/strict');
+(async()=>{
+ const browser=await chromium.launch({headless:true,channel:process.env.PLAYWRIGHT_CHANNEL||undefined});
+ try {
+ const page=await browser.newPage({viewport:{width:1440,height:1000}});
+ const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.goto(process.env.KGT_URL||'http://127.0.0.1:8514');
+ await page.getByRole('button',{name:'지식그래프',exact:true}).click();
+ await page.getByLabel('관계도 프로젝트').selectOption('KGT-26001');
+ await page.locator('.kg-canvas canvas').first().waitFor();
+ await page.getByLabel('노드 검색').fill('IN-260901');
+ await page.getByRole('button',{name:'입고검사 · IN-260901',exact:true}).click();
+ assert.match(await page.locator('.kg-detail').innerText(),/합격/);
+ await page.getByLabel('관계 필터').selectOption('입고검사');
+ assert.match(await page.locator('.kg-toolbar').innerText(),/4개 노드 · 3개 관계/);
+ await page.getByLabel('노드 검색').fill('');
+ await page.getByLabel('관계 필터').selectOption('');
+ await page.getByRole('button',{name:'관계도 확대',exact:true}).click();
+ await page.getByRole('button',{name:'전체 보기',exact:true}).click();
+ await page.screenshot({path:'/tmp/kgt-v4-desktop.png',fullPage:true});
+ await page.getByLabel('관계도 프로젝트').selectOption('KGT-26002');
+ await page.getByLabel('노드 검색').fill('IN-260902');
+ await page.getByRole('button',{name:'입고검사 · IN-260902',exact:true}).click();
+ assert.match(await page.locator('.kg-detail').innerText(),/보류/);
+ assert.doesNotMatch(await page.locator('.kg-list').innerText(),/IN-260901/);
+ await page.setViewportSize({width:390,height:844});
+ await page.getByLabel('노드 검색').fill('');
+ await page.screenshot({path:'/tmp/kgt-v4-mobile.png',fullPage:true});
+ assert(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),'mobile overflow');
+ await page.getByRole('button',{name:'대화',exact:true}).click();
+ await page.getByRole('button',{name:'지식그래프',exact:true}).click();
+ assert.equal(await page.getByLabel('관계도 프로젝트').inputValue(),'KGT-26002');
+ // Late response must not replace the next selected project.
+ await page.route('**/api/knowledge-graph?project_id=KGT-26001',async route=>{await new Promise(r=>setTimeout(r,500));await route.continue().catch(()=>{});});
+ await page.getByLabel('관계도 프로젝트').selectOption('KGT-26001');
+ await page.getByLabel('관계도 프로젝트').selectOption('KGT-26003');
+ await page.locator('.kg-canvas canvas').first().waitFor();
+ await page.waitForTimeout(650);
+ await page.locator('.kg-list summary').click();
+ assert.match(await page.locator('.kg-list').innerText(),/KGT-26003/);
+ assert.doesNotMatch(await page.locator('.kg-list').innerText(),/KGT-26001/);
+ await page.setViewportSize({width:1440,height:1000});
+ const recommendations=page.getByRole('region',{name:'지식그래프 추천질문'});
+ assert.equal(await recommendations.getByRole('button').count(),10);
+ const kinds=['','고객','설계·변경','자재 LOT','입고검사','공정','FAT','구매','설비 측정','클레임'];
+ for(let i=0;i<10;i++){
+  await recommendations.getByRole('button').nth(i).click();
+  await page.locator('.kg-canvas canvas').first().waitFor();
+  assert.equal(await page.getByLabel('관계도 프로젝트').inputValue(),'KGT-26003');
+  assert.equal(await page.getByLabel('관계 필터').inputValue(),kinds[i]);
+ }
+ await page.setViewportSize({width:390,height:844});
+ await page.getByRole('button',{name:'질문',exact:true}).click();
+ await recommendations.getByRole('button').nth(4).click();
+ await page.locator('.kg-canvas canvas').first().waitFor();
+ assert.equal(await page.getByLabel('관계 필터').inputValue(),'입고검사');
+ assert.equal(await page.locator('.left.panel.open').count(),0);
+ assert(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth));
+ await page.reload();
+ await page.getByRole('button',{name:'질문',exact:true}).click();
+ await recommendations.getByRole('button').nth(5).click();
+ assert.equal(await page.getByLabel('관계도 프로젝트').inputValue(),'');
+ await page.getByLabel('관계도 프로젝트').selectOption('KGT-26001');
+ await page.locator('.kg-canvas canvas').first().waitFor();
+ assert.equal(await page.getByLabel('관계 필터').inputValue(),'공정');
+ assert.deepEqual(errors,[]);
+ console.log('PASS: graph selection, original records, filters, zoom, project isolation, mobile, tab lifecycle, stale requests');
+ }finally{await browser.close()}
+})().catch(e=>{console.error(e);process.exit(1)});

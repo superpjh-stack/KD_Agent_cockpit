@@ -23,6 +23,9 @@ from kyungdong_agent.factory_tools import KyungdongToolRegistry
 from kyungdong_agent.service import ManufacturingAgent, DEFAULT_MODEL
 from kyungdong_agent.compound_graph import CompoundGraph
 from kyungdong_agent.compound_questions import COMPOUND_QUESTIONS
+from v2.knowledge_graph import build_graph
+from v2 import reports
+from v2.studio import StudioRequest, build_studio
 from v2.wake import WAKE_POLICY, calls_agent, addressed_question
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -60,13 +63,15 @@ def local_request(request: Request) -> bool:
 
 
 def create_app(repository=None):
-    app = FastAPI(title='경동글로벌텍 AI Agent V2')
+    app = FastAPI(title='경동글로벌텍 AI Agent V4')
     # Lazy initialization lets tests inject a temporary repository without touching the real DB.
     def repo():
         nonlocal repository
         if repository is None:
             repository = create_repository(Path(os.getenv('KGT_SQLITE_PATH', ROOT / 'data/kyungdong_demo.db')))
         return repository
+
+    reports.install(app, repo)
 
     @app.middleware('http')
     async def access(request, call_next):
@@ -75,7 +80,9 @@ def create_app(repository=None):
             supplied = request.headers.get('authorization', '').removeprefix('Bearer ')
             if not expected or not hmac.compare_digest(supplied, expected):
                 return JSONResponse({'detail': '설정에서 접근 코드를 입력해 주세요.'}, status_code=401)
-        return await call_next(request)
+        response = await call_next(request)
+        if request.url.path.startswith('/api/'): response.headers['Cache-Control'] = 'no-store'
+        return response
 
     def meta():
         return {'demo_data': True, 'source': '경동글로벌텍 검증용 DB · 샘플 문서',
@@ -98,7 +105,7 @@ def create_app(repository=None):
     @app.get('/api/health')
     def health():
         repo().dashboard()
-        return {'status': 'ok', 'version': '2.0.0'}
+        return {'status': 'ok', 'version': '4.0.0'}
 
     @app.get('/api/workspace')
     def workspace():
@@ -107,6 +114,11 @@ def create_app(repository=None):
                 'questions': questions, 'kpi': repo().dashboard(),
                 'meta': {**meta(), 'backend': 'PostgreSQL + pgvector' if isinstance(repo(), PostgresRepository) else 'SQLite',
                          'ai_configured': bool(os.getenv('OPENAI_API_KEY')), 'model': os.getenv('OPENAI_MODEL', DEFAULT_MODEL), 'wake': WAKE_POLICY}}
+
+    @app.get('/api/knowledge-graph')
+    def knowledge_graph(project_id: str = Query(min_length=1, max_length=80)):
+        check_project(project_id)
+        return {**build_graph(repo(), project_id), 'meta': meta()}
 
     @app.get('/api/documents')
     def documents(q: str = Query(default='', max_length=300)):
@@ -118,6 +130,18 @@ def create_app(repository=None):
             raise HTTPException(404, '조회할 수 없는 테이블입니다.')
         return {'records': repo().table_records(table, limit=10, offset=offset), 'total': next(item['count'] for item in repo().table_inventory() if item['table'] == table), 'meta': meta()}
 
+    @app.post('/api/studio')
+    def studio(body: StudioRequest):
+        try:
+            if body.use_ai and body.mode=='ideas':
+                with OpenAI(api_key=key(),timeout=35,max_retries=0) as client:
+                    return build_studio(repo(),body,client,os.getenv('OPENAI_MODEL',DEFAULT_MODEL))
+            return build_studio(repo(),body)
+        except ValueError as exc:
+            raise HTTPException(422,str(exc)) from exc
+        except OpenAIError as exc:
+            raise HTTPException(502,'AI 기획 생성에 실패했습니다. 서버 연결 설정을 확인하세요.') from exc
+
     @app.post('/api/chat')
     def chat(body: Chat):
         question = body.question.strip()
@@ -125,6 +149,13 @@ def create_app(repository=None):
             raise HTTPException(422, '질문을 입력해 주세요.')
         if not calls_agent(question):
             return {'ignored': True, 'text': '', 'sources': [], 'evidence': [], 'data_evidence': [], 'data_tools': [], 'mode': body.mode, 'meta': meta(), 'wake': WAKE_POLICY}
+        try:
+            report_input=reports.chat_request(question,body.project_id)
+            if report_input:
+                report=reports.create(repo(),report_input)
+                return {'text':report['title']+' 생성 완료. 자료 상태와 확인사항을 검토하세요.','report':report,'mode':body.mode,'meta':meta()}
+        except ValueError as exc:
+            raise HTTPException(422,str(exc)) from exc
         registry = KyungdongToolRegistry(repo())
         try:
             if body.mode == 'ai':
