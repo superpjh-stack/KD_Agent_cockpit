@@ -1,6 +1,6 @@
-import {graphQuestions} from './graphQuestions';
+import WorkflowSidebar from './components/WorkflowSidebar';
 import KnowledgeGraph from './components/KnowledgeGraph';
-import ReportPanel,{type ReportData,reportTitles} from './components/ReportPanel';
+import ReportPanel,{type ReportData,type ReportKind} from './components/ReportPanel';
 import ManufacturingStudio from './components/ManufacturingStudio';
 import {apiPath} from './apiPath';
 import {useEffect, useRef, useState} from 'react';
@@ -18,7 +18,7 @@ function Provenance({meta}: {meta?: Meta}) {
 }
 type Message = {role: 'user' | 'assistant'; text: string; report?:ReportData; mode?: string; evidence?: Doc[]; data_evidence?: Evidence[]; meta?: Meta; analysis_steps?: string[]; request_coverage?: {request:string;status:string}[]; partial?: boolean; effective_projects?: string[]; context_source?: string; comparison_tables?: {tool:string;columns:string[];rows:string[][]}[]};
 type Workspace = {projects: {project_id: string; equipment_type: string; customer: string}[]; tables: {table: string; label: string; count: number}[]; questions: Record<string, string[]>; meta: Meta};
-type Past = {question: string; project: string};
+type Past = {question: string; project: string; mode?:'chat'|'graph';kind?:string};
 function stored<T>(key: string, fallback: T): T {try {return JSON.parse(sessionStorage.getItem(key) || 'null') ?? fallback} catch {return fallback}}
 function save(key: string, value: unknown) {try {sessionStorage.setItem(key, JSON.stringify(value))} catch { /* Private browsing may disable storage. */ }}
 function Records({value}: {value: unknown}) {
@@ -31,7 +31,7 @@ function Records({value}: {value: unknown}) {
 }
 export default function App() {
  const [view,setView]=useState<'chat'|'studio'|'reports'|'graph'>('chat');
- const [graphProject,setGraphProject]=useState('');
+ const [reportKind,setReportKind]=useState<ReportKind>('projects');
  const [graphRequest,setGraphRequest]=useState({id:0,kind:'',question:''});
  const [token, setToken] = useState(() => stored('kgt-access', ''));
  const [workspace, setWorkspace] = useState<Workspace | null>(null), [docs, setDocs] = useState<Doc[]>([]);
@@ -39,8 +39,7 @@ export default function App() {
  const [question, setQuestion] = useState(''), [search, setSearch] = useState(''), [busy, setBusy] = useState(false), [error, setError] = useState('');
  const [panel, setPanel] = useState(''), [settings, setSettings] = useState(false), [doc, setDoc] = useState<Doc | null>(null);
  const [table, setTable] = useState<{name: string; records: unknown; offset: number; total: number; meta: Meta} | null>(null), [past, setPast] = useState<Past[]>(() => stored<Past[]>('kgt-history', []).map(item => ({...item, question: item.question.replace(/^경동아\s*[,，]?\s*/, '')})));
- const [group, setGroup] = useState('데이터 대시보드');
- const [questionFilter, setQuestionFilter] = useState(''), [tableFilter, setTableFilter] = useState(''), [draftToken, setDraftToken] = useState(token);
+ const [tableFilter, setTableFilter] = useState(''), [draftToken, setDraftToken] = useState(token);
  const [docsMeta, setDocsMeta] = useState<Meta>(), [docsBusy, setDocsBusy] = useState(false);
  const docsRun = useRef(0), tableRun = useRef(0);
  const scrollAnchor = useRef(-1);
@@ -116,9 +115,6 @@ export default function App() {
  }
  function openSettings() {closeDialog(); setDraftToken(token); setSettings(true)}
  function applySettings() {const next = draftToken.trim(); if (next !== token) {reset(); docsRun.current++; setSearch(''); setToken(next); save('kgt-access', next)} closeDialog()}
- const questionGroups = Object.keys(workspace?.questions || {'데이터 대시보드': []});
- const activeGroup = questionGroups.includes(group) ? group : questionGroups[0] || '데이터 대시보드';
- const filteredQuestions = (workspace?.questions[activeGroup] || []).filter(q => q.includes(questionFilter.trim()));
  const locked = busy || voice.active;
  const mode = workspace?.meta.ai_configured ? 'ai' : 'demo';
   const voiceStatus: Record<string, string> = {permission: '마이크 권한 확인 중', connecting: '음성 연결 중', listening: '편하게 말씀하세요', speaking: '질문을 듣고 있습니다', responding: '조회·답변 준비 중', answering: '음성으로 답변 중'};
@@ -126,12 +122,13 @@ export default function App() {
   <header><div className="brand"><span className="brand-mark"><Factory size={23}/></span><div><strong>경동글로벌텍</strong><small>MANUFACTURING INTELLIGENCE · V4</small></div></div><div className="header-actions"><button onClick={openSettings} aria-label="설정"><Settings size={18}/></button></div></header>
   <nav className="mobile-nav"><button onClick={() => setPanel(panel === 'questions' ? '' : 'questions')}><History size={16}/>질문</button><button onClick={() => setPanel(panel === 'data' ? '' : 'data')}><BookOpen size={16}/>자료</button></nav>
   <div className="layout">
-   <aside className={'left panel ' + (panel === 'questions' ? 'open' : '')}><div className="panel-heading"><span>YOUR NEXT QUESTION</span><button className="mobile-close" onClick={() => setPanel('')} aria-label="질문 닫기"><X size={18}/></button></div><h2>보고서 리스트</h2><div className="question-list">{Object.values(reportTitles).map((title,i)=><button disabled={locked||!workspace} key={title} onClick={()=>void submit(title+' 만들어줘','')}><span>{i+1}</span>{title}</button>)}</div><section className="graph-question-section" aria-label="지식그래프 추천질문"><h2>지식그래프 추천질문</h2><p className="muted">관계 탐색 10개 · 클릭 후 프로젝트를 선택하세요.</p><div className="question-list">{graphQuestions.map((item,i)=><button key={item.question} disabled={!workspace||locked} onClick={()=>{setGraphRequest(prev=>({id:prev.id+1,kind:item.kind,question:item.question}));setView('graph');setPanel('')}}><span>{String(i+1).padStart(2,'0')}</span>{item.question}</button>)}</div></section><h2>추천질문리스트</h2><p className="muted">데이터 10개 · 지식베이스 10개 · 복합질문 10개</p><div className="question-tabs">{questionGroups.map(item => <button key={item} className={activeGroup === item ? 'active' : ''} onClick={() => setGroup(item)}>{item}</button>)}</div><input className="panel-filter" aria-label="추천질문 검색" placeholder="추천질문 찾기" value={questionFilter} onChange={e => setQuestionFilter(e.target.value)}/><div className="question-list">{filteredQuestions.map((q, i) => <button key={q} disabled={locked} onClick={() => void submit(q)}><span>{String((workspace?.questions[activeGroup]?.indexOf(q) ?? i) + 1).padStart(2, '0')}</span>{q}</button>)}{!filteredQuestions.length && <p className="muted">현재 데이터에서 추천할 질문이 없습니다.</p>}</div><div className="history-heading"><h2><History size={17}/>질의이력</h2><button onClick={() => {setPast([]); save('kgt-history', [])}}>지우기</button></div>{past.length ? past.map((item, i) => <button className="past" key={i} disabled={locked} onClick={() => void submit(item.question, item.project)}>{item.question}<small>{item.project || '전체 프로젝트'}</small></button>) : <p className="muted">질문을 시작하면 여기에 기록됩니다.</p>}</aside>
+   <aside className={'left panel ' + (panel === 'questions' ? 'open' : '')}><div className="panel-heading"><span>YOUR NEXT QUESTION</span><button className="mobile-close" onClick={() => setPanel('')} aria-label="질문 닫기"><X size={18}/></button></div><WorkflowSidebar questions={workspace?.questions||{}} locked={locked||!workspace} onAction={item=>{if(item.mode==='graph'){const next=[{question:item.question,project,mode:'graph' as const,kind:item.kind},...past.filter(p=>p.question!==item.question||p.project!==project)].slice(0,20);setPast(next);save('kgt-history',next);setGraphRequest(prev=>({id:prev.id+1,kind:item.kind||'',question:item.question}));setView('graph');setPanel('')}else void submit(item.question)}} onReport={kind=>{setReportKind(kind);setView('reports');setPanel('')}} past={past} onPast={item=>{if(item.mode==='graph'){if(item.project!==project)reset(item.project);setGraphRequest(prev=>({id:prev.id+1,kind:item.kind||'',question:item.question}));setView('graph');setPanel('')}else void submit(item.question,item.project)}} onClear={()=>{setPast([]);save('kgt-history',[])}}/></aside>
    <main>
-    <nav className="work-tabs" aria-label="작업 화면">{([['chat','대화'],['studio','연구소'],['reports','보고서'],['graph','지식그래프']] as const).map(([key,label])=><button key={key} aria-selected={view===key} onClick={()=>{setPanel('');setView(key)}}>{label}</button>)}</nav>
-    {view==='graph'&&workspace&&<div className="v3-workspace"><KnowledgeGraph key={token+graphRequest.id} token={token} workspace={workspace} initialProject={graphProject} initialKind={graphRequest.kind} recommendedQuestion={graphRequest.question} onProjectChange={setGraphProject}/></div>}
-    {view==='studio'&&workspace&&<div className="v3-workspace"><ManufacturingStudio key={token} token={token} workspace={workspace}/></div>}
-    {view==='reports'&&workspace&&<div className="v3-workspace"><ReportPanel key={token} token={token}/></div>}
+    <div className="workspace-project"><label>작업 프로젝트<select aria-label="작업 프로젝트" value={project} disabled={!workspace} onChange={e=>reset(e.target.value)}><option value="">전체 / 프로젝트 선택</option>{workspace?.projects.map(p=><option key={p.project_id} value={p.project_id}>{p.project_id} · {p.customer} · {p.equipment_type}</option>)}</select></label><small>{project?'대화·관계도·보고서에 같은 프로젝트를 적용합니다.':'관계도와 원인 조사는 프로젝트 선택이 필요합니다.'}</small></div>
+    <nav className="work-tabs" aria-label="작업 화면">{([['chat','AI에게 질문'],['studio','문제 해결·개선'],['reports','보고서 만들기'],['graph','프로젝트 관계도']] as const).map(([key,label])=><button key={key} aria-selected={view===key} onClick={()=>{setPanel('');setView(key)}}>{label}</button>)}</nav>
+    {view==='graph'&&workspace&&<div className="v3-workspace"><KnowledgeGraph key={token+project+graphRequest.id} token={token} workspace={workspace} initialProject={project} initialKind={graphRequest.kind} recommendedQuestion={graphRequest.question} onProjectChange={next=>{if(next!==project)reset(next)}} onAsk={text=>{setView('chat');setQuestion(text)}} onReport={kind=>{setReportKind(kind);setView('reports')}}/></div>}
+    {view==='studio'&&workspace&&<div className="v3-workspace"><ManufacturingStudio key={token} token={token} workspace={workspace} initialProject={project} onProjectChange={next=>{if(next!==project)reset(next)}}/></div>}
+    {view==='reports'&&workspace&&<div className="v3-workspace"><ReportPanel key={token+project+reportKind} token={token} kind={reportKind} onKindChange={setReportKind} initialProject={project} projects={workspace?.projects} onProjectChange={next=>{if(next!==project)reset(next)}}/></div>}
     <div className="chat-view" hidden={view!=='chat'}>
     <div className="conversation-top"><div><span className="eyebrow">AGENT CONVERSATION</span><h1>경동 에이전트</h1></div><button className="new-chat" onClick={() => reset()}><Plus size={17}/>새 대화</button></div>
 
