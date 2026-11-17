@@ -86,11 +86,13 @@ def test_realtime_session_uses_actual_manufacturing_tools(client, monkeypatch):
     assert response.status_code == 200 and 'fake-key' not in response.text
     session = json.loads(captured['files']['session'][1])
     assert 'KGT-26001' in session['instructions']
+    assert '경동아로 시작한 발화에만 응답' in session['instructions']
+    assert '저는 경동에이전트 경동이입니다.' in session['instructions']
     assert '조회시각은 근거 ID가 아닙니다' in session['instructions']
     assert '결과가 비어 있으면' in session['instructions']
     assert 'analyze_manufacturing_question' in {item['name'] for item in session['tools']}
     assert session['audio']['input']['turn_detection']['create_response'] is False
-    assert session['audio']['input']['turn_detection']['interrupt_response'] is True
+    assert session['audio']['input']['turn_detection']['interrupt_response'] is False
     assert client.post('/api/realtime/session', content=b'\xff', headers={'Content-Type': 'application/sdp'}).status_code == 400
 
 

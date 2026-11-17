@@ -1,15 +1,24 @@
 import {apiPath} from '../apiPath';
 import {useCallback,useEffect,useRef,useState} from 'react';
-import {callsAgent,KGT_WAKE_POLICY} from '../wake';
+import {callsAgent,KGT_VOICE_WAKE_POLICY,KGT_VOICE_INTRO} from '../wake';
 
-export type RealtimeVoiceState='idle'|'permission'|'connecting'|'listening'|'speaking'|'responding'|'answering'|'error';
+export type RealtimeVoiceState='idle'|'permission'|'connecting'|'introducing'|'listening'|'speaking'|'responding'|'answering'|'error';
 type Turn={role:'user'|'assistant';text:string};
 
 export function useRealtimeVoice(token:string,project:string,onTurn:(turn:Turn)=>void,onEvidence:(name:string,output:string)=>void){
  const [state,setState]=useState<RealtimeVoiceState>('idle'),[error,setError]=useState(''),[muted,setMuted]=useState(false),[needsPlay,setNeedsPlay]=useState(false);
  const pc=useRef<RTCPeerConnection|null>(null),channel=useRef<RTCDataChannel|null>(null),media=useRef<MediaStream|null>(null),audio=useRef<HTMLAudioElement|null>(null),epoch=useRef(0);
+ const introducing=useRef(false),introSent=useRef(false),introGenerated=useRef(false),introPlayed=useRef(false),isMuted=useRef(false);
+ const latestInput=useRef(''),handledInputs=useRef(new Set<string>());
+ function completeIntroduction(){
+  if(!introducing.current||!introGenerated.current||!introPlayed.current)return;
+  introducing.current=false;
+  media.current?.getAudioTracks().forEach(t=>{t.enabled=!isMuted.current});
+  setState('listening');
+ }
  const requests=useRef(new Set<AbortController>());
  const turnEpoch=useRef(0), requestedTurn=useRef(0);
+ const finishedResponses=useRef(new Set<string>());
  const responseTurns=useRef(new Map<string,number>());
  const voiceHistory=useRef<Turn[]>([]);
  const toolCalls=useRef(new Set<string>());
@@ -25,7 +34,8 @@ export function useRealtimeVoice(token:string,project:string,onTurn:(turn:Turn)=
  const supported=window.isSecureContext&&!!navigator.mediaDevices?.getUserMedia&&typeof RTCPeerConnection!=='undefined';
 
  const stop=useCallback(()=>{
-  voiceHistory.current=[];turnEpoch.current++;responseTurns.current.clear();epoch.current++;responseActive.current=false;queuedResponse.current=false;
+  introducing.current=false;introSent.current=false;introGenerated.current=false;introPlayed.current=false;isMuted.current=false;latestInput.current='';handledInputs.current.clear();
+  voiceHistory.current=[];turnEpoch.current++;responseTurns.current.clear();finishedResponses.current.clear();epoch.current++;responseActive.current=false;queuedResponse.current=false;
   requests.current.forEach(request=>request.abort());requests.current.clear();
   channel.current?.close();channel.current=null;
   pc.current?.close();pc.current=null;
@@ -37,9 +47,9 @@ export function useRealtimeVoice(token:string,project:string,onTurn:(turn:Turn)=
  useEffect(()=>{stop()},[token,project,stop]);
 
  const play=useCallback(async()=>{if(!audio.current)return;try{await audio.current.play();setNeedsPlay(false)}catch{setNeedsPlay(true);setError('소리가 준비됐습니다. 재생을 눌러 주세요.')}},[]);
- function finishAssistant(text?:string){const final=(text||assistantText.current).trim();assistantText.current='';if(final){voiceHistory.current=[...voiceHistory.current,{role:'assistant' as const,text:final}].slice(-12);callback.current({role:'assistant',text:final})}}
+ function finishAssistant(text?:string){const final=(text||assistantText.current).trim();assistantText.current='';if(final){if(!introducing.current)voiceHistory.current=[...voiceHistory.current,{role:'assistant' as const,text:final}].slice(-12);callback.current({role:'assistant',text:final})}}
  async function runTool(name:string,callId:string,argumentsText:string,run:number){
-  if(run!==epoch.current||!callId||toolCalls.current.has(callId))return;toolCalls.current.add(callId);toolsInResponse.current++;
+  if(introducing.current||run!==epoch.current||!callId||toolCalls.current.has(callId))return;toolCalls.current.add(callId);toolsInResponse.current++;
   const turn=turnEpoch.current;
   let args:Record<string,unknown>={};
   try{args=JSON.parse(argumentsText||'{}') as Record<string,unknown>}catch{args={}}
@@ -58,6 +68,7 @@ export function useRealtimeVoice(token:string,project:string,onTurn:(turn:Turn)=
   const turn=turnEpoch.current;
   if(run!==epoch.current)return;
   finishAssistant();
+  if(introducing.current){introGenerated.current=true;completeIntroduction();return}
   if(toolsInResponse.current){
    setState('responding');
    while(run===epoch.current&&turn===turnEpoch.current&&toolsInResponse.current){
@@ -82,43 +93,58 @@ export function useRealtimeVoice(token:string,project:string,onTurn:(turn:Turn)=
   try{
    const event=JSON.parse(raw) as Record<string,unknown>,type=String(event.type||'');
    const responseId=String(event.response_id||'');
-   if(responseId&&responseTurns.current.has(responseId)&&responseTurns.current.get(responseId)!==turnEpoch.current)return;
-   if(type==='input_audio_buffer.speech_started'){
-    turnEpoch.current++;queuedResponse.current=false;assistantText.current='';
-    requests.current.forEach(request=>request.abort());requests.current.clear();
-    const dc=channel.current;
-    if(dc?.readyState==='open'){
-     if(responseActive.current)dc.send(JSON.stringify({type:'response.cancel'}));
-     dc.send(JSON.stringify({type:'output_audio_buffer.clear'}));
-     for(const id of toolCalls.current)if(!toolOutputs.current.has(id))dc.send(JSON.stringify({type:'conversation.item.create',item:{type:'function_call_output',call_id:id,output:JSON.stringify({cancelled:true})}}));
-    }
-    toolCalls.current.clear();toolOutputs.current.clear();toolsInResponse.current=0;
-    setState('speaking');
+   if(responseId&&responseTurns.current.get(responseId)!==turnEpoch.current)return;
+   if(type==='output_audio_buffer.stopped'){
+    if(introducing.current){introPlayed.current=true;completeIntroduction()}
    }
-   else if(type==='input_audio_buffer.speech_stopped')setState('responding');
+   else if(type==='input_audio_buffer.speech_started'){
+    latestInput.current=String(event.item_id||'');
+    if(!introducing.current&&!responseActive.current)setState('speaking');
+   }
+   else if(type==='input_audio_buffer.speech_stopped'){
+    if(!introducing.current&&!responseActive.current)setState('responding');
+   }
    else if(type==='conversation.item.input_audio_transcription.completed'){
-    const transcript=String(event.transcript||'').trim();
-    if(transcript&&callsAgent(transcript,KGT_WAKE_POLICY)){
+    const transcript=String(event.transcript||'').trim(),itemId=String(event.item_id||'');
+    if(itemId&&handledInputs.current.has(itemId))return;
+    if(itemId)handledInputs.current.add(itemId);
+    const accepted=!introducing.current&&(!latestInput.current||!itemId||itemId===latestInput.current)&&transcript&&callsAgent(transcript,KGT_VOICE_WAKE_POLICY);
+    if(accepted){
+     turnEpoch.current++;queuedResponse.current=false;assistantText.current='';
+     requests.current.forEach(request=>request.abort());requests.current.clear();
+     const dc=channel.current;
+     if(dc?.readyState==='open'){
+      if(responseActive.current)dc.send(JSON.stringify({type:'response.cancel'}));
+      dc.send(JSON.stringify({type:'output_audio_buffer.clear'}));
+      for(const id of toolCalls.current)dc.send(JSON.stringify({type:'conversation.item.create',item:{type:'function_call_output',call_id:id,output:JSON.stringify({cancelled:true})}}));
+     }
+     toolCalls.current.clear();toolOutputs.current.clear();toolsInResponse.current=0;
      voiceHistory.current=[...voiceHistory.current,{role:'user' as const,text:transcript}].slice(-12);
      callback.current({role:'user',text:transcript});
      requestResponse();
     }else{
-     if(event.item_id&&channel.current?.readyState==='open')channel.current.send(JSON.stringify({type:'conversation.item.delete',item_id:event.item_id}));
-     if(!responseActive.current)setState('listening');
+     if(itemId&&channel.current?.readyState==='open')channel.current.send(JSON.stringify({type:'conversation.item.delete',item_id:itemId}));
+     if(!introducing.current&&!responseActive.current)setState('listening');
     }
+   }else if(type==='conversation.item.input_audio_transcription.failed'){
+    if(event.item_id&&channel.current?.readyState==='open')channel.current.send(JSON.stringify({type:'conversation.item.delete',item_id:event.item_id}));
+    if(!introducing.current&&!responseActive.current)setState('listening');
    }else if(type==='response.created'){
     const response=event.response as {id?:string}|undefined;
+    if(!responseActive.current){channel.current?.send(JSON.stringify({type:'response.cancel'}));return}
     if(response?.id)responseTurns.current.set(response.id,requestedTurn.current);
     responseActive.current=true;
-    if(requestedTurn.current===turnEpoch.current)setState('responding');
+    if(requestedTurn.current===turnEpoch.current)setState(introducing.current?'introducing':'responding');
    }
-   else if(type==='response.output_audio.delta'){setState('answering')}
-   else if(type==='response.output_audio_transcript.delta'){setState('answering');assistantText.current+=String(event.delta||'')}
+   else if(type==='response.output_audio.delta'){setState(introducing.current?'introducing':'answering')}
+   else if(type==='response.output_audio_transcript.delta'){setState(introducing.current?'introducing':'answering');assistantText.current+=String(event.delta||'')}
    else if(type==='response.output_audio_transcript.done')finishAssistant(String(event.transcript||''));
    else if(type==='response.function_call_arguments.done')void runTool(String(event.name||''),String(event.call_id||''),String(event.arguments||'{}'),run);
    else if(type==='response.done'){
+    const response=event.response as {id?:string;status?:string}|undefined;
+    if(response?.id){if(!responseTurns.current.has(response.id)||finishedResponses.current.has(response.id))return;finishedResponses.current.add(response.id)}
     responseActive.current=false;
-    const response=event.response as {id?:string}|undefined;
+    if(introducing.current&&response?.status&&response.status!=='completed'){stop();setError('자기소개 음성을 완료하지 못했습니다. 음성을 다시 시작해 주세요.');setState('error');return}
     const old=response?.id ? responseTurns.current.get(response.id)!==turnEpoch.current : requestedTurn.current!==turnEpoch.current;
     if(old){if(queuedResponse.current)requestResponse();return}
     void finishResponse(run);
@@ -128,18 +154,22 @@ export function useRealtimeVoice(token:string,project:string,onTurn:(turn:Turn)=
  }
  async function start(){
   if(state!=='idle'&&state!=='error')return;
-  stop();const run=epoch.current;setError('');
+  stop();const run=epoch.current;setError('');introducing.current=true;
   if(!supported){setError('이 브라우저에서는 실시간 마이크를 사용할 수 없습니다. HTTPS 또는 localhost에서 열어 주세요.');setState('error');return}
   setState('permission');
   try{
    const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
-   if(run!==epoch.current){stream.getTracks().forEach(t=>t.stop());return}media.current=stream;
+   if(run!==epoch.current){stream.getTracks().forEach(t=>t.stop());return}media.current=stream;stream.getAudioTracks().forEach(t=>{t.enabled=false});
    const peer=new RTCPeerConnection();pc.current=peer;
    const player=document.createElement('audio');player.autoplay=true;player.setAttribute('playsinline','');audio.current=player;
    peer.ontrack=e=>{if(run!==epoch.current)return;player.srcObject=e.streams[0];void play()};
-   peer.onconnectionstatechange=()=>{if(run!==epoch.current)return;if(['failed','disconnected'].includes(peer.connectionState)){stop();setError('실시간 음성 연결이 끊겼습니다. 다시 시작해 주세요.');setState('error')}else if(peer.connectionState==='connected')setState('listening')};
+   peer.onconnectionstatechange=()=>{if(run!==epoch.current)return;if(['failed','disconnected'].includes(peer.connectionState)){stop();setError('실시간 음성 연결이 끊겼습니다. 다시 시작해 주세요.');setState('error')}else if(peer.connectionState==='connected')setState(introducing.current?'introducing':'listening')};
    stream.getTracks().forEach(t=>peer.addTrack(t,stream));
-   const dc=peer.createDataChannel('oai-events');channel.current=dc;dc.onmessage=e=>handleEvent(String(e.data),run);dc.onopen=()=>{if(run===epoch.current)setState('listening')};
+   const dc=peer.createDataChannel('oai-events');channel.current=dc;dc.onmessage=e=>handleEvent(String(e.data),run);dc.onopen=()=>{
+    if(run!==epoch.current||introSent.current)return;
+    introSent.current=true;setState('introducing');responseActive.current=true;requestedTurn.current=turnEpoch.current;
+    dc.send(JSON.stringify({type:'response.create',response:{instructions:'다음 자기소개 문장만 그대로 한국어로 읽으세요. 다른 인사, 설명, 질문을 덧붙이지 말고 도구를 호출하지 마세요. '+KGT_VOICE_INTRO,tool_choice:'none'}}));
+   };
    setState('connecting');const offer=await peer.createOffer();if(run!==epoch.current)return;await peer.setLocalDescription(offer);if(run!==epoch.current)return;
    const params=new URLSearchParams();if(project)params.set('project_id',project);
    const request=new AbortController();requests.current.add(request);
@@ -148,6 +178,6 @@ export function useRealtimeVoice(token:string,project:string,onTurn:(turn:Turn)=
    if(run!==epoch.current)return;await peer.setRemoteDescription({type:'answer',sdp:answer});
   }catch(e){if(run===epoch.current){const message=(e as Error).name==='NotAllowedError'?'마이크 권한을 허용해 주세요.':(e as Error).message;stop();setError(message);setState('error')}}
  }
- function toggleMute(){const next=!muted;media.current?.getAudioTracks().forEach(t=>{t.enabled=!next});setMuted(next)}
+ function toggleMute(){const next=!isMuted.current;isMuted.current=next;media.current?.getAudioTracks().forEach(t=>{t.enabled=!next&&!introducing.current});setMuted(next)}
  return {state,error,muted,needsPlay,supported,start,stop,toggleMute,play,active:!['idle','error'].includes(state)};
 }

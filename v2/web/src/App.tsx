@@ -117,7 +117,7 @@ export default function App() {
  function applySettings() {const next = draftToken.trim(); if (next !== token) {reset(); docsRun.current++; setSearch(''); setToken(next); save('kgt-access', next)} closeDialog()}
  const locked = busy || voice.active;
  const mode = workspace?.meta.ai_configured ? 'ai' : 'demo';
-  const voiceStatus: Record<string, string> = {permission: '마이크 권한 확인 중', connecting: '음성 연결 중', listening: '편하게 말씀하세요', speaking: '질문을 듣고 있습니다', responding: '조회·답변 준비 중', answering: '음성으로 답변 중'};
+  const voiceStatus: Record<string, string> = {permission: '마이크 권한 확인 중', connecting: '음성 연결 중', introducing: '경동이가 자기소개 중입니다', listening: '“경동아”로 불러 질문하세요', speaking: '질문을 듣고 있습니다', responding: '조회·답변 준비 중', answering: '음성으로 답변 중'};
  return <div className="app">
   <header><div className="brand"><span className="brand-mark"><Factory size={23}/></span><div><strong>경동글로벌텍</strong><small>MANUFACTURING INTELLIGENCE · V4</small></div></div><div className="header-actions"><button onClick={openSettings} aria-label="설정"><Settings size={18}/></button></div></header>
   <nav className="mobile-nav"><button onClick={() => setPanel(panel === 'questions' ? '' : 'questions')}><History size={16}/>질문</button><button onClick={() => setPanel(panel === 'data' ? '' : 'data')}><BookOpen size={16}/>자료</button></nav>
@@ -140,7 +140,7 @@ export default function App() {
     <div className="composer-wrap">
      {(error || voice.error) && <p className="error" role="alert">{error || voice.error}</p>}
      <div className="voice-row"><button disabled={busy || !workspace?.meta.ai_configured} onClick={() => voice.active ? voice.stop() : void voice.start()}><Mic size={16}/>{voice.active ? '음성 종료' : '실시간 음성'}</button>{voice.active && <><button onClick={voice.toggleMute}>{voice.muted ? '음소거 해제' : '음소거'}</button><span role="status" aria-live="polite">{voiceStatus[voice.state] || '음성 연결 중'}</span></>}{voice.needsPlay && <button onClick={() => void voice.play()}>음성 재생</button>}<span className="ai-voice-note">AI 생성 음성</span></div>
-     <form className="composer" onSubmit={e => {e.preventDefault(); void submit(question)}}><textarea aria-label="질문 입력" placeholder="프로젝트·자재·품질에 대해 질문하세요…" rows={2} maxLength={3000} value={question} onChange={e => setQuestion(e.target.value)} onKeyDown={e => {if(e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {e.preventDefault(); void submit(question)}}}/><div className="composer-bottom"><span className="composer-status">{workspace ? workspace.meta.ai_configured ? "AI 분석" : "자료 조회" : "연결 확인 중"}</span><button className="send" aria-label="질문 보내기" disabled={locked || !question.trim() || !workspace}><ArrowUp size={19}/></button></div></form><p className="footer-note">호출명 없이 편하게 질문하세요. 미확인 값은 추정하지 않습니다.</p>
+     <form className="composer" onSubmit={e => {e.preventDefault(); void submit(question)}}><textarea aria-label="질문 입력" placeholder="프로젝트·자재·품질에 대해 질문하세요…" rows={2} maxLength={3000} value={question} onChange={e => setQuestion(e.target.value)} onKeyDown={e => {if(e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {e.preventDefault(); void submit(question)}}}/><div className="composer-bottom"><span className="composer-status">{workspace ? workspace.meta.ai_configured ? "AI 분석" : "자료 조회" : "연결 확인 중"}</span><button className="send" aria-label="질문 보내기" disabled={locked || !question.trim() || !workspace}><ArrowUp size={19}/></button></div></form><p className="footer-note">글은 바로 질문하세요. 음성은 “경동아”로 시작하세요. 미확인 값은 추정하지 않습니다.</p>
     </div>
     </div>
    </main>

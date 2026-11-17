@@ -7,6 +7,10 @@ WAKE_POLICY = {
     "require_wake_name": False,
 }
 
+# Text remains freely addressable; voice requires an explicit invocation.
+VOICE_WAKE_POLICY = {**WAKE_POLICY, "require_wake_name": True}
+VOICE_INTRO = "안녕하세요. 저는 경동에이전트 경동이입니다. 저는 경동글로벌텍 MES 데이터와 지식베이스를 학습해서 경동만의 챗지피티입니다."
+
 
 def calls_agent(text: str, policy: dict = WAKE_POLICY) -> bool:
     """Return True only when the utterance starts with the configured wake word."""

@@ -26,7 +26,7 @@ from kyungdong_agent.compound_questions import COMPOUND_QUESTIONS
 from v2.knowledge_graph import build_graph
 from v2 import reports
 from v2.studio import StudioRequest, build_studio
-from v2.wake import WAKE_POLICY, calls_agent, addressed_question
+from v2.wake import WAKE_POLICY, VOICE_WAKE_POLICY, VOICE_INTRO, calls_agent, addressed_question
 
 ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(ROOT / '.env')
@@ -113,7 +113,7 @@ def create_app(repository=None):
         return {'projects': repo().projects(), 'tables': repo().table_inventory(),
                 'questions': questions, 'kpi': repo().dashboard(),
                 'meta': {**meta(), 'backend': 'PostgreSQL + pgvector' if isinstance(repo(), PostgresRepository) else 'SQLite',
-                         'ai_configured': bool(os.getenv('OPENAI_API_KEY')), 'model': os.getenv('OPENAI_MODEL', DEFAULT_MODEL), 'wake': WAKE_POLICY}}
+                         'ai_configured': bool(os.getenv('OPENAI_API_KEY')), 'model': os.getenv('OPENAI_MODEL', DEFAULT_MODEL), 'wake': WAKE_POLICY, 'voice_wake': VOICE_WAKE_POLICY, 'voice_intro': VOICE_INTRO}}
 
     @app.get('/api/knowledge-graph')
     def knowledge_graph(project_id: str = Query(min_length=1, max_length=80)):
@@ -199,7 +199,8 @@ def create_app(repository=None):
         registry = KyungdongToolRegistry(repo())
         session = {'type': 'realtime', 'model': os.getenv('OPENAI_REALTIME_MODEL', 'gpt-realtime-2.1'),
                    'instructions': '경동글로벌텍 금속제조 업무 도우미입니다. 한국어로 짧게 답하세요. '
-                   f"호출명은 {WAKE_POLICY['agent_name']}입니다. 호출명 없이도 질문과 후속 질문에 자연스럽게 답하세요. "
+                   f"호출명은 {VOICE_WAKE_POLICY['agent_name']}입니다. 첫 자기소개 이후에는 경동아로 시작한 발화에만 응답하세요. 호출명이 없는 발화에는 말하거나 도구를 호출하지 마세요. 후속 질문도 호출명이 필요합니다. "
+                   f"연결 직후 별도로 요청되는 자기소개는 다음 문장만 말하고 도구를 사용하지 마세요: {VOICE_INTRO} "
                    '제조 업무 질문은 반드시 analyze_manufacturing_question에 질문 전체를 전달해 분석하세요. voice_summary를 두세 문장으로 요약하세요. 회사 사실은 반드시 조회 도구로 확인하세요. 근거 ID는 원본 레코드에 있는 project_id, material_lot, document_id 등 실제 식별자만 말하세요. '
                    'retrieved_at과 조회시각은 근거 ID가 아닙니다. 결과가 비어 있으면 선택 프로젝트에서 일치하는 기록을 찾지 못했다고 말하고 '
                    '근거 ID나 수량·단위를 만들지 마세요. 조회된 기록의 부재를 실제 재고가 0이라는 뜻으로 해석하지 마세요. '
@@ -210,7 +211,7 @@ def create_app(repository=None):
                    'tools': [{k: v for k, v in item.items() if k != 'strict'} for item in [KyungdongToolRegistry._tool('analyze_manufacturing_question', '복합 제조 질문을 LangGraph로 분해하고 DB와 문서 근거를 종합한다.', {'question': {'type':'string'}, 'project_id': {'type':['string','null']}}, ['question','project_id'])]],
                    'output_modalities': ['audio'],
                    'audio': {'input': {'transcription': {'model': 'gpt-4o-mini-transcribe', 'language': 'ko'},
-                                       'turn_detection': {'type': 'semantic_vad', 'eagerness': 'auto', 'create_response': False, 'interrupt_response': True}},
+                                       'turn_detection': {'type': 'semantic_vad', 'eagerness': 'auto', 'create_response': False, 'interrupt_response': False}},
                              'output': {'voice': os.getenv('OPENAI_REALTIME_VOICE', 'marin')}}}
         try:
             async with httpx.AsyncClient(timeout=30) as client:
